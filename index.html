@@ -58,8 +58,16 @@ textarea:focus { border-color: var(--accent); }
 .cam-wrap { border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 1; position: relative; }
 .cam-wrap video { width: 100%; display: block; }
 .scan-box { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 54%; aspect-ratio: 1; border: 2px solid var(--accent); border-radius: 12px; pointer-events: none; }
-.qr-wrap { display: flex; justify-content: center; background: #fff; border-radius: 12px; padding: 16px; }
-.qr-wrap canvas { display: block; }
+.qr-wrap { display: flex; justify-content: center; background: #fff; border-radius: 12px; padding: 16px; max-width: 100%; }
+.qr-wrap canvas { display: block; max-width: 100%; height: auto; }
+.scan-guide { position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; }
+.scan-guide::before, .scan-guide::after { content: ''; position: absolute; width: 20px; height: 20px; border: 3px solid var(--accent); }
+.scan-guide::before { top: 0; left: 0; border-right: none; border-bottom: none; }
+.scan-guide::after { top: 0; right: 0; border-left: none; border-bottom: none; }
+.scan-guide-bl::before, .scan-guide-br::after { content: ''; position: absolute; width: 20px; height: 20px; border: 3px solid var(--accent); }
+.scan-guide-bl::before { bottom: 0; left: 0; border-right: none; border-top: none; }
+.scan-guide-br::after { bottom: 0; right: 0; border-left: none; border-top: none; }
+.scan-status { text-align: center; font-size: 11px; font-weight: 600; color: var(--accent); margin-top: 4px; min-height: 16px; }
 .status-ctr { text-align: center; padding: 2rem 0 .5rem; }
 .status-icon { width: 60px; height: 60px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; border: 1px solid var(--border); background: var(--card); }
 .status-icon svg { width: 28px; height: 28px; stroke: var(--accent); fill: none; stroke-width: 1.8; }
@@ -177,8 +185,9 @@ textarea:focus { border-color: var(--accent); }
       </button>
     </div>
     <div id="a-scan-v" style="display:none">
-      <div class="cam-wrap"><video id="cam-s" autoplay playsinline muted></video><div class="scan-box"></div></div>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center">Point camera at receiver's QR code</p>
+      <div class="cam-wrap"><video id="cam-s" autoplay playsinline muted></video><div class="scan-box"><div class="scan-guide scan-guide-bl scan-guide-br"></div></div></div>
+      <div class="scan-status" id="scan-status-s">Position QR in frame</div>
+      <p style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center">Hold steady for 2-3 seconds while scanning</p>
     </div>
   </div>
 </div>
@@ -219,8 +228,9 @@ textarea:focus { border-color: var(--accent); }
       </button>
     </div>
     <div id="r-scan-v" style="display:none">
-      <div class="cam-wrap"><video id="cam-r" autoplay playsinline muted></video><div class="scan-box"></div></div>
-      <p style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center">Point camera at sender's QR code</p>
+      <div class="cam-wrap"><video id="cam-r" autoplay playsinline muted></video><div class="scan-box"><div class="scan-guide scan-guide-bl scan-guide-br"></div></div></div>
+      <div class="scan-status" id="scan-status-r">Position QR in frame</div>
+      <p style="font-size:12px;color:var(--muted);margin-top:8px;text-align:center">Hold steady for 2-3 seconds while scanning</p>
     </div>
   </div>
 </div>
@@ -435,7 +445,7 @@ function makeQR(elId,data){
   try{
     var canvas=document.createElement('canvas');
     el.appendChild(canvas);
-    QRCodeLib.toCanvas(canvas,data,{width:240,errorCorrectionLevel:'L',margin:2,color:{dark:'#000000',light:'#ffffff'}},function(err){
+    QRCodeLib.toCanvas(canvas,data,{width:360,errorCorrectionLevel:'H',margin:4,color:{dark:'#000000',light:'#ffffff'}},function(err){
       if(err)el.innerHTML='<p style="font-size:12px;color:#666;padding:1rem;text-align:center">Use text code tab</p>';
     });
   }catch(e){el.innerHTML='<p style="font-size:12px;color:#666;padding:1rem;text-align:center">Use text code tab</p>'}
@@ -446,13 +456,20 @@ async function startCam(vid,onDetect){
     camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
     var v=document.getElementById(vid);v.srcObject=camStream;
     var canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');
+    var statusEl=document.getElementById('scan-status-'+vid.split('-')[1]);
+    if(statusEl)statusEl.textContent='Scanning...';
     camTimer=setInterval(function(){
       if(v.readyState===v.HAVE_ENOUGH_DATA){
         canvas.width=v.videoWidth;canvas.height=v.videoHeight;
         ctx.drawImage(v,0,0);
         var img=ctx.getImageData(0,0,canvas.width,canvas.height);
         var c=jsQR(img.data,img.width,img.height);
-        if(c&&c.data)onDetect(c.data);
+        if(c&&c.data){
+          if(statusEl)statusEl.textContent='QR detected!';
+          onDetect(c.data);
+        }else{
+          if(statusEl)statusEl.textContent='Scanning...';
+        }
       }
     },250);
   }catch(e){alert('Camera access denied — use paste instead')}
