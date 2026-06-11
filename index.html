@@ -33,13 +33,22 @@
   <link rel="icon" href="./assets/favicon-w9nYSJGx.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/icon-192-amJ48zCo.png">
   <link rel="sitemap" type="application/xml" title="Sitemap" href="data:text/xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHVybHNldCB4bWxucz0iaHR0cDovL3d3dy5zaXRlbWFwcy5vcmcvc2NoZW1hcy9zaXRlbWFwLzAuOSI+CiAgPHVybD4KICAgIDxsb2M+aHR0cHM6Ly9keWxhbmdyb3cuZ2l0aHViLmlvL211dGxpLUZpbGUvPC9sb2M+CiAgICA8bGFzdG1vZD4yMDI2LTA2LTEwPC9sYXN0bW9kPgogICAgPGNoYW5nZWZyZXE+bW9udGhseTwvY2hhbmdlZnJlcT4KICAgIDxwcmlvcml0eT4xLjA8L3ByaW9yaXR5PgogIDwvdXJsPgo8L3VybHNldD4K">
-  <script type="module" crossorigin src="./assets/index-m6mDXorH.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-Bayk91-r.css">
+  <script type="module" crossorigin src="./assets/index-kVtelJu0.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CcQNCxON.css">
 <link rel="manifest" href="./manifest.webmanifest"><script id="vite-plugin-pwa:inline-sw">if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('./sw.js', { scope: './' })})}</script></head>
 <body class="min-h-screen flex flex-col items-center justify-between py-6 px-4 bg-bg text-text-primary antialiased">
   
   <!-- Background animation elements -->
   <div class="mesh-bg" aria-hidden="true"></div>
+
+  <!-- Custom Toast Notification Banner -->
+  <div id="toast-banner" class="hidden fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-xs p-4 rounded-xl glass-panel border-red-500/20 bg-red-950/20 text-red-200 text-xs font-bold items-center gap-3 shadow-xl shadow-black/40" role="alert">
+    <svg class="w-4 h-4 text-red-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span id="toast-message" class="flex-1">An error occurred.</span>
+    <button id="btn-close-toast" class="text-text-secondary hover:text-white p-0.5 transition cursor-pointer" aria-label="Close notification">
+      <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
 
   <!-- Header -->
   <header class="w-full max-w-md flex justify-between items-center mb-6">
@@ -307,7 +316,7 @@
           <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-6" aria-label="Digit 6" inputmode="numeric">
         </div>
 
-        <button id="btn-submit-code" class="w-full py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition cursor-pointer">
+        <button id="btn-submit-code" disabled class="w-full py-3 px-5 rounded-xl bg-accent text-white font-bold flex items-center justify-center gap-2 opacity-50 cursor-not-allowed transition">
           <span>Connect to Sender</span>
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"/>
