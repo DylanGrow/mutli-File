@@ -24,6 +24,28 @@ let selectedFiles: File[] = [];
 let receivedFiles: { name: string; blob: Blob; size: number }[] = [];
 let connectionTimeoutId: number | null = null; // Connection timeout tracker
 let wakeLock: any = null; // Screen WakeLock reference
+let smoothSpeed = 0; // Speed tracker smoothing variable
+
+// History typing
+interface HistoryItem {
+  name: string;
+  size: number;
+  direction: 'sent' | 'received';
+  timestamp: number;
+}
+
+// Map file type to SVG icon
+function getFileIcon(type: string): string {
+  if (type.startsWith('image/')) {
+    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+  } else if (type.startsWith('video/')) {
+    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
+  } else if (type.startsWith('audio/')) {
+    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+  } else {
+    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+  }
+}
 
 // Speed tracking variables
 let speedInterval: number | null = null;
@@ -68,6 +90,12 @@ function showScreen(screenId: string) {
   // Clean up camera if moving away from receive code screen
   if (screenId !== 's-recv-offer') {
     stopCamera();
+  } else {
+    // Auto-focus first digit box immediately on transition
+    setTimeout(() => {
+      const d1 = document.getElementById('digit-1');
+      if (d1) d1.focus();
+    }, 150);
   }
 }
 
@@ -111,6 +139,20 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFileSelectionListeners();
   setupCodeInputListeners();
   checkUrlParams();
+  loadHistoryUI(); // Load recent transfers list on launch
+
+  // Check initial network connection state
+  if (!navigator.onLine) {
+    updateConnectionStatus('disconnected', 'Offline (No Internet)');
+  }
+
+  // Network connection status change listeners
+  window.addEventListener('online', () => {
+    updateConnectionStatus('disconnected', 'Online (Ready)');
+  });
+  window.addEventListener('offline', () => {
+    updateConnectionStatus('disconnected', 'Offline (No Internet)');
+  });
 
   // Prevent default drag-and-drop navigation on window/body levels
   window.addEventListener('dragover', (e) => e.preventDefault(), false);
@@ -162,12 +204,35 @@ function setupHomeListeners() {
       showScreen('s-home');
     });
   });
+
+  // Cancel buttons click listeners
+  document.getElementById('btn-cancel-send')?.addEventListener('click', () => {
+    resetState();
+    showScreen('s-home');
+  });
+  document.getElementById('btn-cancel-recv')?.addEventListener('click', () => {
+    resetState();
+    showScreen('s-home');
+  });
+
+  // Clear history button click listener
+  document.getElementById('btn-clear-history')?.addEventListener('click', () => {
+    localStorage.removeItem('fbeam_history');
+    loadHistoryUI();
+  });
 }
 
 // Reset state on disconnect/back
 function resetState() {
   stopCamera();
   releaseWakeLock();
+  
+  // Hide cancel/done buttons
+  document.getElementById('btn-cancel-send')?.classList.remove('hidden');
+  document.getElementById('btn-cancel-recv')?.classList.remove('hidden');
+  document.getElementById('btn-send-done')?.classList.add('hidden');
+  document.getElementById('btn-recv-done')?.classList.add('hidden');
+
   if (connectionTimeoutId) {
     clearTimeout(connectionTimeoutId);
     connectionTimeoutId = null;
@@ -221,6 +286,7 @@ function setupFileSelectionListeners() {
   fileInput.addEventListener('change', () => {
     if (fileInput.files) {
       handleFilesSelected(Array.from(fileInput.files));
+      fileInput.value = ''; // Reset input value so change fires on identical files selection
     }
   });
 
@@ -234,7 +300,20 @@ function setupFileSelectionListeners() {
 // Handle selected files
 function handleFilesSelected(files: File[]) {
   if (files.length === 0) return;
-  selectedFiles = [...selectedFiles, ...files];
+  
+  // Max file size limit: 2GB (prevent browser tab memory crashes)
+  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+  const validFiles = files.filter(f => {
+    if (f.size > MAX_FILE_SIZE) {
+      alert(`File "${f.name}" exceeds the 2GB browser limit and was removed to prevent memory crashes.`);
+      return false;
+    }
+    return true;
+  });
+
+  if (validFiles.length === 0) return;
+
+  selectedFiles = [...selectedFiles, ...validFiles];
   updateSelectedFilesUI();
 }
 
@@ -268,10 +347,10 @@ function updateSelectedFilesUI() {
     const fileInfo = document.createElement('div');
     fileInfo.className = 'flex items-center gap-2.5 min-w-0';
 
-    // Safe document icon svg
+    // Safe type-specific icon svg
     const iconWrapper = document.createElement('div');
     iconWrapper.className = 'w-7 h-7 rounded-lg bg-accent/15 border border-accent/20 flex items-center justify-center text-accent flex-shrink-0';
-    iconWrapper.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+    iconWrapper.innerHTML = getFileIcon(file.type);
     fileInfo.appendChild(iconWrapper);
 
     const nameSizeWrapper = document.createElement('div');
@@ -368,13 +447,14 @@ function initializeSenderRoom() {
     const copyBtn = document.getElementById('btn-copy-code');
     if (copyBtn) {
       // Clear event listeners
-      const newCopyBtn = copyBtn.cloneNode(true);
+      const newCopyBtn = copyBtn.cloneNode(true) as HTMLElement;
       copyBtn.parentNode?.replaceChild(newCopyBtn, copyBtn);
       newCopyBtn.addEventListener('click', () => {
         navigator.clipboard.writeText(`Room Code: ${code}\nLink: ${receiverUrl}`).then(() => {
-          const originalText = newCopyBtn.textContent;
-          newCopyBtn.textContent = 'Copied!';
-          setTimeout(() => { newCopyBtn.textContent = originalText; }, 2000);
+          const originalHTML = newCopyBtn.innerHTML;
+          // Clean checkmark SVG transition
+          newCopyBtn.innerHTML = `<svg class="w-3.5 h-3.5 text-success animate-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>`;
+          setTimeout(() => { newCopyBtn.innerHTML = originalHTML; }, 2000);
         });
       });
     }
@@ -460,6 +540,8 @@ async function startSendingPayload() {
   const titleEl = document.getElementById('send-status-title');
   if (titleEl) titleEl.textContent = 'Payload Transmitted!';
 
+  // Hide cancel, show done button
+  document.getElementById('btn-cancel-send')?.classList.add('hidden');
   const doneBtn = document.getElementById('btn-send-done');
   if (doneBtn) {
     doneBtn.classList.remove('hidden');
@@ -468,6 +550,9 @@ async function startSendingPayload() {
       showScreen('s-home');
     });
   }
+
+  // Save to history
+  saveToHistory(selectedFiles.map(f => ({ name: f.name, size: f.size })), 'sent');
 }
 
 // Build send queue UI
@@ -562,21 +647,27 @@ function startSpeedTracker(isSending: boolean) {
   const etaEl = document.getElementById(isSending ? 'send-transfer-eta' : 'recv-transfer-eta');
 
   if (speedInterval) clearInterval(speedInterval);
+  smoothSpeed = 0;
 
   speedInterval = setInterval(() => {
     const bytesThisSecond = transferredBytes - lastTransferredBytes;
     lastTransferredBytes = transferredBytes;
 
+    // Smoothed Exponential Moving Average speed
+    smoothSpeed = smoothSpeed === 0 ? bytesThisSecond : smoothSpeed * 0.7 + bytesThisSecond * 0.3;
+
     if (speedEl) {
-      speedEl.textContent = `${formatBytes(bytesThisSecond)}/s`;
+      speedEl.textContent = `${formatBytes(smoothSpeed)}/s`;
     }
 
-    if (etaEl && bytesThisSecond > 0) {
+    if (etaEl && smoothSpeed > 100) {
       const remainingBytes = totalBytesToTransfer - transferredBytes;
-      const secondsLeft = Math.ceil(remainingBytes / bytesThisSecond);
+      const secondsLeft = Math.ceil(remainingBytes / smoothSpeed);
       const minutes = Math.floor(secondsLeft / 60);
       const seconds = secondsLeft % 60;
       etaEl.textContent = `ETA: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+    } else if (etaEl) {
+      etaEl.textContent = 'ETA: --:--';
     }
   }, 1000) as unknown as number;
 }
@@ -632,7 +723,17 @@ function setupCodeInputListeners() {
 
     // Handle copy-pastes
     input.addEventListener('paste', (e) => {
-      const data = e.clipboardData?.getData('text');
+      let data = e.clipboardData?.getData('text') || '';
+      
+      // Extract code if pasting full URL
+      if (data.includes('room=')) {
+        try {
+          const parsed = new URL(data).searchParams.get('room');
+          if (parsed) data = parsed;
+        } catch (err) {}
+      }
+      data = data.trim();
+      
       if (data && /^\d{6}$/.test(data)) {
         e.preventDefault();
         for (let i = 0; i < 6; i++) {
@@ -786,6 +887,8 @@ function setupReceiverConnection() {
         const titleEl = document.getElementById('recv-status-title');
         if (titleEl) titleEl.textContent = 'Payload Received!';
 
+        // Hide cancel and show done button
+        document.getElementById('btn-cancel-recv')?.classList.add('hidden');
         const doneBtn = document.getElementById('btn-recv-done');
         if (doneBtn) {
           doneBtn.classList.remove('hidden');
@@ -794,6 +897,9 @@ function setupReceiverConnection() {
             showScreen('s-home');
           });
         }
+
+        // Save to history
+        saveToHistory(receivedFiles.map(f => ({ name: f.name, size: f.size })), 'received');
       }
     }
   });
@@ -824,18 +930,28 @@ function buildReceiveQueueUI(metaList: FileMetadata[]) {
     row.className = 'flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-border/80 text-xs text-text-secondary';
 
     const infoWrapper = document.createElement('div');
-    infoWrapper.className = 'min-w-0';
+    infoWrapper.className = 'flex items-center gap-2.5 min-w-0';
+
+    // Safe type-specific icon svg
+    const iconWrapper = document.createElement('div');
+    iconWrapper.className = 'w-7 h-7 rounded-lg bg-accent/15 border border-accent/20 flex items-center justify-center text-accent flex-shrink-0';
+    iconWrapper.innerHTML = getFileIcon(file.type);
+    infoWrapper.appendChild(iconWrapper);
+
+    const textWrapper = document.createElement('div');
+    textWrapper.className = 'min-w-0';
 
     const nameEl = document.createElement('p');
-    nameEl.className = 'font-bold text-text-primary truncate max-w-[170px]';
+    nameEl.className = 'font-bold text-text-primary truncate max-w-[150px]';
     nameEl.textContent = file.name;
 
     const sizeEl = document.createElement('p');
     sizeEl.className = 'text-[9px] text-text-secondary font-semibold';
     sizeEl.textContent = formatBytes(file.size);
 
-    infoWrapper.appendChild(nameEl);
-    infoWrapper.appendChild(sizeEl);
+    textWrapper.appendChild(nameEl);
+    textWrapper.appendChild(sizeEl);
+    infoWrapper.appendChild(textWrapper);
 
     const actionWrapper = document.createElement('div');
     actionWrapper.id = `recv-action-${index}`;
@@ -887,10 +1003,12 @@ function enableDownloadBtn(index: number, blob: Blob, filename: string) {
 
 // Trigger browser download safely
 function triggerLocalDownload(blob: Blob, filename: string) {
+  // Sanitize filename: strip dangerous symbols, cap length to 100 characters to prevent system issues
+  const sanitizedFilename = filename.replace(/[/\\?%*:|"<>\s]/g, '_').substring(0, 100);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename;
+  a.download = sanitizedFilename || 'downloaded_file';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -955,6 +1073,79 @@ async function startCamera() {
     stopCamera();
     if (statusEl) statusEl.textContent = 'Camera blocked. Type code manually.';
     alert('Failed to access camera. Please allow camera permissions or type the 6-digit room code manually.');
+  }
+}
+
+// Local History Storage functions
+function saveToHistory(files: { name: string; size: number }[], direction: 'sent' | 'received') {
+  try {
+    const raw = localStorage.getItem('fbeam_history') || '[]';
+    const list: HistoryItem[] = JSON.parse(raw);
+    files.forEach(f => {
+      list.unshift({
+        name: f.name,
+        size: f.size,
+        direction,
+        timestamp: Date.now()
+      });
+    });
+    if (list.length > 20) list.length = 20; // Keep history compact
+    localStorage.setItem('fbeam_history', JSON.stringify(list));
+    loadHistoryUI();
+  } catch (err) {
+    console.error('History save error:', err);
+  }
+}
+
+function loadHistoryUI() {
+  const container = document.getElementById('recent-transfers-container');
+  const card = document.getElementById('recent-transfers-card');
+  if (!container || !card) return;
+
+  try {
+    const raw = localStorage.getItem('fbeam_history') || '[]';
+    const list: HistoryItem[] = JSON.parse(raw);
+
+    if (list.length === 0) {
+      card.classList.add('hidden');
+      card.classList.remove('flex');
+      return;
+    }
+
+    card.classList.remove('hidden');
+    card.classList.add('flex');
+    container.innerHTML = '';
+
+    list.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'flex items-center justify-between p-2 rounded-lg bg-slate-950/40 border border-border/60 text-[11px] text-text-secondary';
+
+      const fileInfo = document.createElement('div');
+      fileInfo.className = 'flex items-center gap-2 min-w-0';
+
+      const dirBadge = document.createElement('span');
+      dirBadge.className = `px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+        item.direction === 'sent' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+      }`;
+      dirBadge.textContent = item.direction;
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'font-bold text-text-primary truncate max-w-[150px]';
+      nameEl.textContent = item.name;
+
+      fileInfo.appendChild(dirBadge);
+      fileInfo.appendChild(nameEl);
+
+      const sizeEl = document.createElement('span');
+      sizeEl.className = 'font-mono text-slate-500';
+      sizeEl.textContent = formatBytes(item.size);
+
+      row.appendChild(fileInfo);
+      row.appendChild(sizeEl);
+      container.appendChild(row);
+    });
+  } catch (err) {
+    console.error('History load error:', err);
   }
 }
 
