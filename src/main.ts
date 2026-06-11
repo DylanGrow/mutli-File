@@ -22,6 +22,8 @@ let myPeer: Peer | null = null;
 let currentConn: DataConnection | null = null;
 let selectedFiles: File[] = [];
 let receivedFiles: { name: string; blob: Blob; size: number }[] = [];
+let connectionTimeoutId: number | null = null; // Connection timeout tracker
+let wakeLock: any = null; // Screen WakeLock reference
 
 // Speed tracking variables
 let speedInterval: number | null = null;
@@ -29,10 +31,28 @@ let lastTransferredBytes = 0;
 let transferredBytes = 0;
 let totalBytesToTransfer = 0;
 
-
 // Camera variables
 let cameraStream: MediaStream | null = null;
 let cameraTimer: number | null = null;
+
+// Wake Lock Helper API
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await (navigator as any).wakeLock.request('screen');
+    }
+  } catch (err) {
+    console.warn('Wake Lock request failed:', err);
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    wakeLock.release().then(() => {
+      wakeLock = null;
+    });
+  }
+}
 
 // Screen management
 function showScreen(screenId: string) {
@@ -91,6 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFileSelectionListeners();
   setupCodeInputListeners();
   checkUrlParams();
+
+  // Prevent default drag-and-drop navigation on window/body levels
+  window.addEventListener('dragover', (e) => e.preventDefault(), false);
+  window.addEventListener('drop', (e) => e.preventDefault(), false);
 });
 
 // Check URL params for room code scan fallback
@@ -111,6 +135,11 @@ function checkUrlParams() {
 
 // Setup Home screen listeners
 function setupHomeListeners() {
+  document.getElementById('header-logo')?.addEventListener('click', () => {
+    resetState();
+    showScreen('s-home');
+  });
+
   document.getElementById('btn-send-init')?.addEventListener('click', () => {
     selectedFiles = [];
     updateSelectedFilesUI();
@@ -138,6 +167,11 @@ function setupHomeListeners() {
 // Reset state on disconnect/back
 function resetState() {
   stopCamera();
+  releaseWakeLock();
+  if (connectionTimeoutId) {
+    clearTimeout(connectionTimeoutId);
+    connectionTimeoutId = null;
+  }
   if (speedInterval) {
     clearInterval(speedInterval);
     speedInterval = null;
@@ -276,6 +310,7 @@ function updateSelectedFilesUI() {
 
 // Generate Room Code and initialize PeerJS room
 function initializeSenderRoom() {
+  resetState(); // Clean up previous connections and timeouts
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const displayEl = document.getElementById('room-code-display');
   if (displayEl) {
@@ -309,14 +344,24 @@ function initializeSenderRoom() {
       qrContainer.innerHTML = '';
       const canvas = document.createElement('canvas');
       qrContainer.appendChild(canvas);
-      QRCode.toCanvas(canvas, receiverUrl, {
-        width: 160,
-        margin: 1,
-        color: {
-          dark: '#0f172a',
-          light: '#ffffff'
-        }
-      });
+      try {
+        QRCode.toCanvas(canvas, receiverUrl, {
+          width: 160,
+          margin: 1,
+          color: {
+            dark: '#0f172a',
+            light: '#ffffff'
+          }
+        }, (err) => {
+          if (err) {
+            console.error(err);
+            qrContainer.textContent = 'QR failed. Use code above.';
+          }
+        });
+      } catch (err) {
+        console.error(err);
+        qrContainer.textContent = 'QR failed. Use code above.';
+      }
     }
 
     // Set copy button content
@@ -377,6 +422,7 @@ async function startSendingPayload() {
 
   showScreen('s-send-xfer');
   buildSendQueueUI();
+  await requestWakeLock(); // Request Wake Lock during transmission
 
   totalBytesToTransfer = selectedFiles.reduce((acc, f) => acc + f.size, 0);
   transferredBytes = 0;
@@ -474,7 +520,7 @@ async function sendSingleFile(file: File, fileIndex: number) {
     fileIndex
   } as ControlMessage);
 
-  const CHUNK_SIZE = 1024 * 64; // 64KB chunks
+  const CHUNK_SIZE = 1024 * 16; // 16KB chunks (iOS Safari caps compatible)
   let offset = 0;
 
   while (offset < file.size) {
@@ -558,9 +604,10 @@ function setupCodeInputListeners() {
   const btnSubmit = document.getElementById('btn-submit-code');
 
   inputs.forEach((input, idx) => {
-    // On keyup focus shift
+    // On keyup focus shift & sanitize non-numeric
     input.addEventListener('input', (e) => {
       const target = e.target as HTMLInputElement;
+      target.value = target.value.replace(/\D/g, ''); // Digits only!
       const val = target.value;
       if (val && idx < 5) {
         inputs[idx + 1].focus();
@@ -568,7 +615,7 @@ function setupCodeInputListeners() {
       checkEnableSubmit();
     });
 
-    // Handle backspaces
+    // Handle backspaces & arrow keys navigation
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Backspace') {
         const target = e.target as HTMLInputElement;
@@ -576,6 +623,10 @@ function setupCodeInputListeners() {
           inputs[idx - 1].focus();
           inputs[idx - 1].value = '';
         }
+      } else if (e.key === 'ArrowLeft' && idx > 0) {
+        inputs[idx - 1].focus();
+      } else if (e.key === 'ArrowRight' && idx < 5) {
+        inputs[idx + 1].focus();
       }
     });
 
@@ -626,8 +677,18 @@ function setupCodeInputListeners() {
 
 // Connect to the sender peer room
 function connectToSender(code: string) {
+  resetState(); // Clear peer and timeouts first
   updateConnectionStatus('connecting', 'Locating Sender...');
   const peerId = `fbeam-${code}`;
+
+  // Start 15-second connection timeout
+  connectionTimeoutId = setTimeout(() => {
+    if (!currentConn || !currentConn.open) {
+      alert('Connection timed out. Ensure both devices are on the same network and the code matches.');
+      resetState();
+      showScreen('s-home');
+    }
+  }, 15000) as unknown as number;
 
   myPeer = new Peer({
     debug: 1,
@@ -648,6 +709,10 @@ function connectToSender(code: string) {
   });
 
   myPeer.on('error', (err) => {
+    if (connectionTimeoutId) {
+      clearTimeout(connectionTimeoutId);
+      connectionTimeoutId = null;
+    }
     console.error('Peer error:', err);
     alert('Connecting failed. Ensure you are on the same local network or try again.');
     resetState();
@@ -664,6 +729,10 @@ function setupReceiverConnection() {
   let receivingIdx = -1;
 
   currentConn.on('open', () => {
+    if (connectionTimeoutId) {
+      clearTimeout(connectionTimeoutId);
+      connectionTimeoutId = null;
+    }
     updateConnectionStatus('connected', 'Connected to Sender');
     showScreen('s-recv-xfer');
   });
@@ -679,6 +748,7 @@ function setupReceiverConnection() {
       // Control messages (JSON strings/objects)
       const msg = data as ControlMessage;
       if (msg.type === 'meta' && msg.metadata) {
+        requestWakeLock();
         fileMeta = msg.metadata;
         totalBytesToTransfer = fileMeta.reduce((acc, f) => acc + f.size, 0);
         transferredBytes = 0;
@@ -835,7 +905,11 @@ async function startCamera() {
 
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' }
+      video: { 
+        facingMode: 'environment',
+        width: { ideal: 640 },
+        height: { ideal: 640 }
+      }
     });
     video.srcObject = cameraStream;
 
@@ -878,6 +952,7 @@ async function startCamera() {
 
   } catch (e) {
     console.error('Camera access error:', e);
+    stopCamera();
     if (statusEl) statusEl.textContent = 'Camera blocked. Type code manually.';
     alert('Failed to access camera. Please allow camera permissions or type the 6-digit room code manually.');
   }
