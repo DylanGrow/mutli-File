@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0a0a0f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="FileBeam">
+  
+  <!-- Security Headers (Implemented client-side where possible, CSP ready) -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:; camera-src 'self';">
+
+  <!-- SEO Meta Tags -->
+  <title>FileBeam - Secure Peer-to-Peer File Transfer</title>
+  <meta name="description" content="FileBeam lets you transfer files directly between Windows, Android, and iOS devices. Peer-to-peer, offline-ready, no size limits, and fully secure.">
+  <meta name="keywords" content="file transfer, peer to peer, webrtc, secure file sharing, offline file sharing, android to ios, windows to iphone, local file transfer, no internet file share">
+  <meta name="robots" content="index, follow">
+  
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="FileBeam - Secure Peer-to-Peer File Transfer">
+  <meta property="og:description" content="Transfer files directly between devices over a shared network. Peer-to-peer, instant, and secure.">
+  <meta property="og:image" content="./assets/icon-512-CZ3ETY6S.png">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:title" content="FileBeam - Secure Peer-to-Peer File Transfer">
+  <meta property="twitter:description" content="Transfer files directly between devices over a shared network. Peer-to-peer, instant, and secure.">
+
+  <!-- Links -->
+  <link rel="icon" href="./assets/favicon-CpzN4wZZ.ico" sizes="any">
+  <link rel="icon" href="./assets/favicon-w9nYSJGx.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/icon-192-amJ48zCo.png">
+  <link rel="sitemap" type="application/xml" title="Sitemap" href="data:text/xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHVybHNldCB4bWxucz0iaHR0cDovL3d3dy5zaXRlbWFwcy5vcmcvc2NoZW1hcy9zaXRlbWFwLzAuOSI+CiAgPHVybD4KICAgIDxsb2M+aHR0cHM6Ly9keWxhbmdyb3cuZ2l0aHViLmlvL211dGxpLUZpbGUvPC9sb2M+CiAgICA8bGFzdG1vZD4yMDI2LTA2LTEwPC9sYXN0bW9kPgogICAgPGNoYW5nZWZyZXE+bW9udGhseTwvY2hhbmdlZnJlcT4KICAgIDxwcmlvcml0eT4xLjA8L3ByaW9yaXR5PgogIDwvdXJsPgo8L3VybHNldD4K">
+  <script type="module" crossorigin src="./assets/index-ZsoFg1e0.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-MLecvnMG.css">
+<link rel="manifest" href="./manifest.webmanifest"><script id="vite-plugin-pwa:inline-sw">if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('./sw.js', { scope: './' })})}</script></head>
+<body class="min-h-screen flex flex-col items-center justify-between py-6 px-4 bg-bg text-text-primary antialiased">
+  
+  <!-- Background animation elements -->
+  <div class="mesh-bg" aria-hidden="true"></div>
+
+  <!-- Header -->
+  <header class="w-full max-w-md flex justify-between items-center mb-6">
+    <div class="flex items-center gap-3 cursor-pointer" id="header-logo" onclick="window.location.reload()">
+      <div class="w-10 h-10 rounded-xl bg-accent/20 border border-accent/40 flex items-center justify-center text-accent shadow-lg shadow-accent/10">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+      </div>
+      <div>
+        <span class="text-lg font-black tracking-tight uppercase bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">FileBeam</span>
+        <span class="block text-[9px] font-bold text-success/80 tracking-widest uppercase">Peer-to-Peer</span>
+      </div>
+    </div>
+    
+    <!-- Connection Status Badge -->
+    <div id="conn-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-border text-xs font-semibold text-text-secondary">
+      <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" id="conn-dot"></span>
+      <span id="conn-status-text">Disconnected</span>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="w-full max-w-md flex-1 flex flex-col justify-center">
+
+    <!-- SCREEN: Home -->
+    <section id="s-home" class="screen active flex flex-col gap-6" aria-labelledby="home-heading">
+      <div class="text-center py-6">
+        <h1 id="home-heading" class="text-3xl font-extrabold tracking-tight mb-2 sm:text-4xl bg-gradient-to-br from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+          Any Device. Direct Share.
+        </h1>
+        <p class="text-sm text-text-secondary leading-relaxed max-w-xs mx-auto">
+          Send files between Windows, iOS, and Android. Truly secure peer-to-peer transfer.
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-3.5">
+        <button id="btn-send-init" class="w-full py-4 px-6 rounded-2xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-3 shadow-lg shadow-accent/20 active:scale-[0.98] transition cursor-pointer">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          Send Files
+        </button>
+        <button id="btn-recv-init" class="w-full py-4 px-6 rounded-2xl bg-surface hover:bg-white/5 border border-border text-text-primary font-bold flex items-center justify-center gap-3 active:scale-[0.98] transition cursor-pointer">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Receive Files
+        </button>
+      </div>
+
+      <!-- Instruction list -->
+      <article class="glass-panel rounded-2xl p-5 mt-2 flex flex-col gap-4">
+        <h2 class="text-xs font-black tracking-widest text-text-secondary uppercase">How It Works</h2>
+        <ol class="flex flex-col gap-3 text-xs text-text-secondary">
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">1</span>
+            <span class="leading-relaxed">Connect both devices to the <strong>same network</strong> (WiFi or Hotspot).</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">2</span>
+            <span class="leading-relaxed">One device drops a file and gets a <strong>6-digit room code</strong>.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">3</span>
+            <span class="leading-relaxed">The other device enters the code (or scans the QR) to link.</span>
+          </li>
+          <li class="flex gap-3">
+            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">4</span>
+            <span class="leading-relaxed">Files transfer <strong>direct peer-to-peer</strong> (fully encrypted, local speed).</span>
+          </li>
+        </ol>
+      </article>
+    </section>
+
+    <!-- SCREEN: Send - File Selection -->
+    <section id="s-send-file" class="screen hidden flex flex-col gap-5" aria-labelledby="send-file-heading">
+      <div class="flex items-center gap-3">
+        <button class="btn-back w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
+          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Step 1 — Choose Files</span>
+      </div>
+
+      <h2 id="send-file-heading" class="text-xl font-bold tracking-tight">Select your transfer payloads</h2>
+
+      <!-- Drag & Drop Zone -->
+      <div class="border-2 border-dashed border-border hover:border-accent/60 bg-surface/50 rounded-2xl p-8 text-center cursor-pointer active:scale-[0.99] transition" id="file-drop-zone">
+        <input type="file" id="file-input-el" class="hidden" multiple>
+        <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-border flex items-center justify-center mx-auto mb-4">
+          <svg class="w-6 h-6 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <p class="text-sm font-bold text-text-primary mb-1">Click or drag files here</p>
+        <p class="text-xs text-text-secondary">Any file type, no size limit</p>
+      </div>
+
+      <!-- File List -->
+      <div class="glass-panel rounded-2xl p-4 hidden flex-col gap-3" id="file-list-card">
+        <div class="flex justify-between items-center border-b border-border pb-2.5">
+          <span class="text-xs font-extrabold text-text-secondary uppercase">Selected Files</span>
+          <span class="text-xs text-accent font-bold" id="total-selected-size">0 B</span>
+        </div>
+        <div class="max-h-48 overflow-y-auto flex flex-col gap-2.5 pr-1" id="file-list-container">
+          <!-- Dynamic File items go here -->
+        </div>
+        <button id="btn-create-room" class="w-full mt-2 py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-2.5 active:scale-[0.98] transition cursor-pointer">
+          <span>Generate Room Code</span>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- SCREEN: Send - Share Room Code -->
+    <section id="s-send-offer" class="screen hidden flex flex-col gap-5" aria-labelledby="send-offer-heading">
+      <div class="flex items-center gap-3">
+        <button class="btn-back w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
+          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Step 2 — Connect Receiver</span>
+      </div>
+
+      <h2 id="send-offer-heading" class="text-xl font-bold tracking-tight">Share Connection Info</h2>
+
+      <!-- Room Code Card -->
+      <div class="glass-panel rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-4">
+        <span class="text-xs font-bold text-text-secondary uppercase tracking-widest">Your 6-Digit Room Code</span>
+        
+        <!-- Large Room Code Display -->
+        <div class="flex gap-2 justify-center my-1">
+          <span class="text-4xl sm:text-5xl font-black tracking-widest font-mono text-accent" id="room-code-display">------</span>
+        </div>
+
+        <button id="btn-copy-code" class="px-4 py-2 rounded-lg bg-surface hover:bg-white/5 border border-border text-xs text-text-secondary font-bold flex items-center gap-2 active:scale-[0.97] transition cursor-pointer">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          Copy Room Info
+        </button>
+      </div>
+
+      <!-- QR Code Option -->
+      <div class="glass-panel rounded-2xl p-5 flex flex-col items-center justify-center gap-3">
+        <span class="text-xs font-extrabold text-text-secondary uppercase tracking-wider">Or Scan QR Code</span>
+        <div class="w-44 h-44 bg-white p-2 rounded-xl flex items-center justify-center shadow-inner" id="send-qr-container">
+          <!-- Localy generated QR Canvas goes here -->
+        </div>
+        <p class="text-[10px] text-text-secondary text-center max-w-[200px] leading-relaxed">
+          Open this app on the receiver and scan this QR to connect instantly.
+        </p>
+      </div>
+
+      <!-- Waiting Status -->
+      <div class="glass-panel rounded-2xl p-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-4 h-4 rounded-full border-2 border-slate-700 border-t-accent animate-spin"></div>
+          <span class="text-xs font-semibold text-text-secondary">Waiting for receiver to connect...</span>
+        </div>
+        <span class="text-[10px] text-success font-black uppercase tracking-wider animate-pulse">Room Ready</span>
+      </div>
+    </section>
+
+    <!-- SCREEN: Send - Transfer Progress -->
+    <section id="s-send-xfer" class="screen hidden flex flex-col gap-5" aria-labelledby="send-xfer-heading">
+      <h2 id="send-xfer-heading" class="text-xl font-bold tracking-tight flex items-center gap-2.5">
+        <svg class="w-5 h-5 text-accent animate-bounce" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <span id="send-status-title">Sending Payload</span>
+      </h2>
+
+      <!-- Progress Panel -->
+      <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
+        <div class="flex justify-between items-center text-xs text-text-secondary">
+          <span class="font-bold uppercase tracking-wider">Overall Progress</span>
+          <span class="text-accent font-mono font-bold" id="send-progress-percent">0%</span>
+        </div>
+        
+        <div class="w-full h-3 rounded-full bg-slate-900 border border-border overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-300 shimmer-bar" id="send-progress-bar" style="width: 0%;"></div>
+        </div>
+
+        <div class="flex justify-between items-center text-[11px] text-text-secondary font-mono">
+          <span id="send-transfer-speed">0 KB/s</span>
+          <span id="send-transfer-ratio">0 B / 0 B</span>
+          <span id="send-transfer-eta">ETA: --:--</span>
+        </div>
+      </div>
+
+      <!-- File Status List -->
+      <div class="glass-panel rounded-2xl p-4 flex flex-col gap-3">
+        <span class="text-xs font-extrabold text-text-secondary uppercase border-b border-border pb-2">Transmission Queue</span>
+        <div class="max-h-48 overflow-y-auto flex flex-col gap-2.5 pr-1" id="send-queue-container">
+          <!-- Dynamically populated payload items -->
+        </div>
+      </div>
+
+      <!-- Finished Action -->
+      <button id="btn-send-done" class="hidden w-full py-4 px-6 rounded-2xl bg-success text-bg font-bold flex items-center justify-center gap-2 hover:bg-success-hover transition cursor-pointer">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Done — Send More Files
+      </button>
+    </section>
+
+    <!-- SCREEN: Receive - Enter Room Code -->
+    <section id="s-recv-offer" class="screen hidden flex flex-col gap-5" aria-labelledby="recv-offer-heading">
+      <div class="flex items-center gap-3">
+        <button class="btn-back w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
+          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Step 1 — Connect</span>
+      </div>
+
+      <h2 id="recv-offer-heading" class="text-xl font-bold tracking-tight">Enter Room Code</h2>
+
+      <!-- Verification Input Panel -->
+      <div class="glass-panel rounded-2xl p-6 flex flex-col items-center gap-5">
+        <span class="text-xs font-bold text-text-secondary uppercase tracking-widest">Enter 6-digit Sender Code</span>
+        
+        <!-- Digit Fields -->
+        <div class="flex gap-2 justify-center" id="code-fields-wrapper">
+          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-1" aria-label="Digit 1" inputmode="numeric">
+          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-2" aria-label="Digit 2" inputmode="numeric">
+          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-3" aria-label="Digit 3" inputmode="numeric">
+          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-4" aria-label="Digit 4" inputmode="numeric">
+          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-5" aria-label="Digit 5" inputmode="numeric">
+          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-6" aria-label="Digit 6" inputmode="numeric">
+        </div>
+
+        <button id="btn-submit-code" class="w-full py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-2 active:scale-[0.98] transition cursor-pointer">
+          <span>Connect to Sender</span>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12"/>
+            <polyline points="12 5 19 12 12 19"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Camera Scan Option -->
+      <div class="glass-panel rounded-2xl p-4 flex flex-col gap-4">
+        <button id="btn-toggle-camera" class="w-full py-3 px-5 rounded-xl bg-surface hover:bg-white/5 border border-border text-sm text-text-primary font-bold flex items-center justify-center gap-2.5 transition cursor-pointer">
+          <svg class="w-4 h-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          Scan Room QR Code
+        </button>
+        
+        <!-- Live Camera Box -->
+        <div class="hidden flex-col gap-3" id="camera-scan-container">
+          <div class="cam-wrap relative rounded-xl border border-border/80 overflow-hidden bg-black aspect-square max-w-xs mx-auto">
+            <video id="scan-camera-el" autoplay playsinline muted class="w-full h-full object-cover"></video>
+            
+            <!-- Scanning Guidelines Box -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div class="w-3/5 h-3/5 border-2 border-accent rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                <!-- Glowing corner bounds -->
+                <div class="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-accent -mt-1 -ml-1"></div>
+                <div class="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-accent -mt-1 -mr-1"></div>
+                <div class="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-accent -mb-1 -ml-1"></div>
+                <div class="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-accent -mb-1 -mr-1"></div>
+                <div class="absolute inset-x-0 top-0 h-0.5 bg-accent/80 scan-line"></div>
+              </div>
+            </div>
+          </div>
+          <span class="text-[10px] text-text-secondary text-center block mt-1" id="scan-camera-status">Point camera at the sender's QR code.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN: Receive - Transfer Progress & Download -->
+    <section id="s-recv-xfer" class="screen hidden flex flex-col gap-5" aria-labelledby="recv-xfer-heading">
+      <h2 id="recv-xfer-heading" class="text-xl font-bold tracking-tight flex items-center gap-2.5">
+        <svg class="w-5 h-5 text-accent animate-bounce" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span id="recv-status-title">Receiving Payload</span>
+      </h2>
+
+      <!-- Progress Panel -->
+      <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
+        <div class="flex justify-between items-center text-xs text-text-secondary">
+          <span class="font-bold uppercase tracking-wider">Overall Progress</span>
+          <span class="text-accent font-mono font-bold" id="recv-progress-percent">0%</span>
+        </div>
+        
+        <div class="w-full h-3 rounded-full bg-slate-900 border border-border overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-300 shimmer-bar" id="recv-progress-bar" style="width: 0%;"></div>
+        </div>
+
+        <div class="flex justify-between items-center text-[11px] text-text-secondary font-mono">
+          <span id="recv-transfer-speed">0 KB/s</span>
+          <span id="recv-transfer-ratio">0 B / 0 B</span>
+          <span id="recv-transfer-eta">ETA: --:--</span>
+        </div>
+      </div>
+
+      <!-- File Status / Download List -->
+      <div class="glass-panel rounded-2xl p-4 flex flex-col gap-3">
+        <span class="text-xs font-extrabold text-text-secondary uppercase border-b border-border pb-2">Payload Content</span>
+        <div class="max-h-56 overflow-y-auto flex flex-col gap-2.5 pr-1" id="recv-queue-container">
+          <!-- Dynamically populated files to download -->
+        </div>
+      </div>
+
+      <!-- Done Action -->
+      <button id="btn-recv-done" class="hidden w-full py-4 px-6 rounded-2xl bg-success text-bg font-bold flex items-center justify-center gap-2 hover:bg-success-hover transition cursor-pointer">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Done — Receive More
+      </button>
+    </section>
+
+  </main>
+
+  <!-- PWA Install Banner -->
+  <div id="pwa-install-banner" class="hidden w-full max-w-md mt-6 p-4 rounded-2xl glass-panel items-center justify-between gap-4 border-accent/20 bg-accent/5">
+    <div class="flex-1 min-w-0">
+      <h3 class="text-xs font-extrabold uppercase tracking-wider text-text-primary mb-0.5">Install FileBeam</h3>
+      <p class="text-[10px] text-text-secondary leading-normal">
+        Run offline, instantly load, and access as a standalone app.
+      </p>
+    </div>
+    <button id="btn-pwa-install" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
+      Install
+    </button>
+  </div>
+
+  <!-- Footer -->
+  <footer class="w-full max-w-md mt-6 text-center text-[10px] text-text-secondary leading-relaxed">
+    <p>
+      FileBeam uses end-to-end encrypted WebRTC channels (DTLS-SRTP). No data leaves your network or touch servers. Reworked to meet federal guidelines for offline transmission capability.
+    </p>
+  </footer>
+
+</body>
+</html>
