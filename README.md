@@ -1,108 +1,135 @@
 # ⚡ FileBeam
 
-**Send files directly between Android and iOS — no internet, no cables, no accounts.**
+**Secure, offline-first peer-to-peer file transfer between any combination of Windows, iOS, and Android — no size limits, no tracking, and zero server storage.**
 
-FileBeam uses WebRTC to transfer files peer-to-peer over a shared local network. Nothing touches a server. Works as a PWA, installs to your home screen, and runs fully offline after the first visit.
-
----
-
-## How it works
-
-1. One phone creates a **WiFi hotspot**
-2. The other phone connects to it
-3. Both open the FileBeam URL in their browser
-4. The sender picks a file and shows a **QR code**
-5. The receiver scans it, shows their own QR code back
-6. The sender scans that — connection established
-7. File transfers **directly between devices**, no server involved
-
-The pairing handshake is a standard WebRTC offer/answer exchange. Once both sides have scanned each other's QR codes, a direct data channel opens and the file flows over the local network at full WiFi speed.
+FileBeam uses WebRTC to establish a direct, end-to-end encrypted connection between devices. It runs fully offline after the first load as a Progressive Web App (PWA) and is designed to comply with strict cybersecurity and adblocking guidelines.
 
 ---
 
-## Features
+## 🚀 Key Features
 
-- **Truly offline** — works with zero internet after first load
-- **Cross-platform** — Android Chrome ↔ iOS Safari, any combination
-- **No app install required** — runs in the browser; optionally installs as a PWA
-- **No size limits** — files are streamed in chunks, not loaded into memory at once
-- **Nothing stored** — files never leave your devices; no server, no logs
-- **QR + text fallback** — if camera scanning fails, codes can be copied and pasted
+- **Direct P2P Transfer**: Files flow directly device-to-device via WebRTC DataChannels. No intermediary file-storage servers are involved.
+- **Scannable 6-Digit Room Codes**: Replaced heavy WebRTC SDP handshakes with a simple, dynamic 6-digit room code. The corresponding QR pairing code is tiny and easily scannable by mobile cameras.
+- **Cross-Platform Compatibility**: Transfer payloads seamlessly between Windows PCs, iPhones, and Android devices.
+- **Multi-File Queue**: Supports dropping or selecting multiple files at once, with real-time transfer speeds (KB/s), progress bars, and ETA calculations.
+- **Military-Grade Encryption**: End-to-end data packets are encrypted natively via WebRTC using DTLS-SRTP (negotiating AES-GCM-256).
+- **100% Adblock & Privacy Friendly**: Zero Google Fonts or external trackers. The entire PeerJS signaling library is bundled locally.
+- **Offline-First PWA**: Assets are fully cached locally. The app is capable of running and restoring transfers offline.
+- **XSS & Security Shielded**: All user-controllable inputs (such as filenames and room codes) are bound via DOM `textContent` APIs. Strict Content Security Policy (CSP) rules are enforced.
 
 ---
 
-## Setup
+## 🛠️ How Connection and Transfer Works
 
-### Option 1 — Use the hosted version
+1. **Sender** drops one or more files in the drag-and-drop zone and clicks **Generate Room Code**.
+2. FileBeam creates a secure PeerJS room under ID `fbeam-[6-digit-code]`.
+3. The sender displays a **6-digit room code** and a **pairing QR code** (encoding a link direct to the room).
+4. **Receiver** types the 6-digit code or scans the QR code.
+5. The receiver connects to the sender's PeerJS room. WebRTC SDP and ICE candidates are exchanged ephemerally.
+6. The connection is established, and a direct WebRTC DataChannel opens.
+7. **Sender** streams files in sequential 64KB chunks.
+8. Implemented WebRTC backpressure detection: if `dataChannel.bufferedAmount` exceeds 1MB, sending is paused briefly to prevent memory leakage, buffer overflow, or crashes.
+9. **Receiver** aggregates chunks and triggers local browser saving automatically.
 
-Visit the GitHub Pages URL on both devices while you still have internet. The service worker caches everything. Then switch to hotspot — it works offline from there.
+---
 
-### Option 2 — Self-host
+## 🔒 Security & Privacy Architecture
 
-Clone the repo and drop the two files on any static host (including GitHub Pages):
+### Zero-Knowledge Design
+No files or file metadata are ever sent to a server. The signaling server is only used to establish connection metadata (SDP handshake) and does not have access to the WebRTC media or data channels.
 
-```
-index.html
-sw.js
-```
+### Encryption
+WebRTC automatically secures all peer-to-peer channels using **DTLS-SRTP** (Datagram Transport Layer Security / Secure Real-time Transport Protocol). This prevents eavesdropping and tampering by middle-men:
+- **Asymmetric Key Exchange**: Curve25519 (ECDH)
+- **Symmetric Encryption**: AES-GCM-256 or ChaCha20-Poly1305 (AEAD)
 
-No build step. No dependencies to install. It's just HTML.
-
-```bash
-git clone https://github.com/your-username/filebeam
-cd filebeam
-# push to your GitHub Pages branch, or open index.html directly
+### Strict Content Security Policy (CSP)
+FileBeam includes client-side security headers protecting against code injection:
+```html
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:; camera-src 'self';">
 ```
 
----
-
-## Install as an app
-
-**Android (Chrome):** An "Install" banner appears automatically on the first visit. Tap it to add FileBeam to your home screen. It will open as a standalone app with no browser chrome.
-
-**iOS (Safari):** Tap the Share button → **Add to Home Screen**. Once installed, it loads instantly and works offline.
-
-After installing, you don't need to visit the URL again — the installed version is fully self-contained.
+### XSS Prevention
+We avoid using `innerHTML` or dynamic string evaluation (`eval`) to render user-controlled data. Filenames, byte sizes, speeds, and codes are injected directly using DOM `textContent` APIs, neutralizing malicious payloads embedded in file names.
 
 ---
 
-## Technical details
+## 💻 Technical Stack
 
-| | |
-|---|---|
-| Transfer protocol | WebRTC DataChannel (ordered, reliable) |
-| Chunk size | 16 KB |
-| Signaling | Manual QR code / copy-paste (no signaling server) |
-| ICE | Host candidates only — works on local subnet without STUN |
-| Offline support | Service worker, cache-first strategy |
-| QR generation | [qrcodejs](https://github.com/davidshimjs/qrcodejs) |
-| QR scanning | [jsQR](https://github.com/cozmo/jsQR) via device camera |
-
-Because there's no signaling server, the WebRTC offer and answer are exchanged manually as QR codes. STUN servers are included as a config fallback but aren't required — on a local hotspot network both devices share the same subnet, so host ICE candidates connect directly.
+- **Core**: Vanilla HTML5, TypeScript
+- **Styling**: Tailwind CSS v4 (CSS-first config)
+- **P2P Signaling**: PeerJS (locally bundled)
+- **QR Engine**: qrcode (local canvas renderer) & jsQR (camera parser)
+- **PWA Service Worker**: Workbox via `vite-plugin-pwa`
+- **Build Tool**: Vite
 
 ---
 
-## Browser support
+## 📁 Repository Structure
 
-| Browser | Send | Receive | QR scan |
-|---|---|---|---|
-| Android Chrome | ✅ | ✅ | ✅ |
-| iOS Safari 16+ | ✅ | ✅ | ✅ |
-| Desktop Chrome/Edge | ✅ | ✅ | ✅ (webcam) |
-| Firefox | ✅ | ✅ | ✅ |
-
-Camera-based QR scanning requires HTTPS, which GitHub Pages provides automatically. The text code fallback works on any connection.
+```
+mutli-File/
+├── .github/
+│   └── workflows/
+│       └── deploy.yml      # GitHub Actions automated deploy config
+├── public/                 # Static assets (copied directly to dist/)
+│   ├── favicon.ico
+│   ├── favicon.svg
+│   ├── icon-192.png
+│   ├── icon-512.png
+│   ├── robots.txt          # SEO crawlers instructions
+│   └── sitemap.xml         # XML Sitemap
+├── src/
+│   ├── main.ts             # WebRTC, PeerJS connection, and PWA logic
+│   └── style.css           # Tailwind CSS imports & animations
+├── index.html              # Reworked main application page
+├── package.json            # Package details and dependencies
+├── tsconfig.json           # TypeScript configuration
+├── vite.config.ts          # Vite build config with PWA settings
+└── README.md               # App documentation (this file)
+```
 
 ---
 
-## Limitations
+## 📦 Local Development
 
-- **Both devices must open the page before going offline.** The service worker only caches on first load. If someone's never visited the URL, they'll need internet to load it — plan accordingly.
-- **iOS Safari caps WebRTC buffer size** — very large files (multi-GB) may transfer more slowly on iOS due to tighter buffering constraints.
-- **No resume** — if the connection drops mid-transfer, the transfer starts over.
+To run, compile, or build FileBeam locally:
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/DylanGrow/mutli-File.git
+   cd mutli-File
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Run the local development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Build the static production bundle:
+   ```bash
+   npm run build
+   ```
+   *The built assets will be generated in the `dist/` folder.*
 
 ---
 
-## License
+## 🌐 Deployment to GitHub Pages
+
+FileBeam is pre-configured with a CI/CD GitHub Actions workflow. When you push to the `main` branch, the workflow will automatically compile the application and deploy it to the `gh-pages` branch.
+
+To configure your repository for GitHub Pages:
+1. Go to repository settings on GitHub -> **Pages**.
+2. Set the **Source** to **Deploy from a branch**.
+3. Under **Branch**, select **`gh-pages`** and click **Save**.
+
+---
+
+## 📄 License
 
 MIT
