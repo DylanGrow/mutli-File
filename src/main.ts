@@ -23,8 +23,13 @@ let currentConn: DataConnection | null = null;
 let selectedFiles: File[] = [];
 let receivedFiles: { name: string; blob: Blob; size: number }[] = [];
 let connectionTimeoutId: number | null = null; // Connection timeout tracker
+let serverTimeoutId: number | null = null; // Server timeout tracker
 let wakeLock: any = null; // Screen WakeLock reference
 let smoothSpeed = 0; // Speed tracker smoothing variable
+let fileMeta: FileMetadata[] = [];
+let currentFileChunks: (ArrayBuffer | Blob)[] = [];
+let receivingIdx = -1;
+let wasCameraActive = false;
 
 // History typing
 interface HistoryItem {
@@ -73,6 +78,66 @@ function releaseWakeLock() {
     wakeLock.release().then(() => {
       wakeLock = null;
     });
+  }
+}
+
+// Custom Toast Notification Handler (Avoids blocking alert UI)
+function showToast(msg: string) {
+  const banner = document.getElementById('toast-banner');
+  const messageEl = document.getElementById('toast-message');
+  if (!banner || !messageEl) return;
+  messageEl.textContent = msg;
+  banner.classList.remove('hidden');
+  banner.classList.add('flex');
+  
+  // Auto-hide toast banner after 5 seconds
+  setTimeout(() => {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+  }, 5000);
+}
+
+// Dynamic progress bar status colors
+function setProgressBarColor(colorClass: 'accent' | 'success' | 'warning' | 'error', isSending: boolean) {
+  const bar = document.getElementById(isSending ? 'send-progress-bar' : 'recv-progress-bar');
+  if (!bar) return;
+  
+  bar.classList.remove('shimmer-bar', 'bg-accent', 'bg-success', 'bg-yellow-500', 'bg-red-500');
+  
+  if (colorClass === 'accent') {
+    bar.classList.add('shimmer-bar', 'bg-accent');
+  } else if (colorClass === 'success') {
+    bar.classList.add('bg-success');
+  } else if (colorClass === 'warning') {
+    bar.classList.add('bg-yellow-500');
+  } else if (colorClass === 'error') {
+    bar.classList.add('bg-red-500');
+  }
+}
+
+// Stats connection diagnostics helper
+function updateConnectionDiagnostics() {
+  if (!currentConn || !currentConn.peerConnection) return;
+  const pc = currentConn.peerConnection;
+  
+  let connType = 'P2P';
+  try {
+    pc.getStats().then(report => {
+      report.forEach(stat => {
+        if (stat.type === 'candidate-pair' && stat.state === 'succeeded') {
+          const localCandidate = report.get(stat.localCandidateId);
+          const remoteCandidate = report.get(stat.remoteCandidateId);
+          if (localCandidate && (localCandidate.candidateType === 'relay' || remoteCandidate?.candidateType === 'relay')) {
+            connType = 'Relayed (TURN)';
+          } else {
+            connType = 'Direct P2P';
+          }
+        }
+      });
+      updateConnectionStatus('connected', `Connected (${connType})`);
+    });
+  } catch (err) {
+    updateConnectionStatus('connected', 'Connected (P2P)');
   }
 }
 
@@ -141,6 +206,15 @@ document.addEventListener('DOMContentLoaded', () => {
   checkUrlParams();
   loadHistoryUI(); // Load recent transfers list on launch
 
+  // Toast close button listener
+  document.getElementById('btn-close-toast')?.addEventListener('click', () => {
+    const banner = document.getElementById('toast-banner');
+    if (banner) {
+      banner.classList.add('hidden');
+      banner.classList.remove('flex');
+    }
+  });
+
   // Check initial network connection state
   if (!navigator.onLine) {
     updateConnectionStatus('disconnected', 'Offline (No Internet)');
@@ -152,6 +226,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('offline', () => {
     updateConnectionStatus('disconnected', 'Offline (No Internet)');
+  });
+
+  // Close connection cleanly on tab close
+  window.addEventListener('beforeunload', () => {
+    resetState();
   });
 
   // Prevent default drag-and-drop navigation on window/body levels
@@ -183,12 +262,20 @@ function setupHomeListeners() {
   });
 
   document.getElementById('btn-send-init')?.addEventListener('click', () => {
+    if (!navigator.onLine) {
+      showToast('Internet connection required for room pairing. Please connect and try again.');
+      return;
+    }
     selectedFiles = [];
     updateSelectedFilesUI();
     showScreen('s-send-file');
   });
 
   document.getElementById('btn-recv-init')?.addEventListener('click', () => {
+    if (!navigator.onLine) {
+      showToast('Internet connection required for room pairing. Please connect and try again.');
+      return;
+    }
     showScreen('s-recv-offer');
     // Clear code fields
     for (let i = 1; i <= 6; i++) {
@@ -227,6 +314,15 @@ function resetState() {
   stopCamera();
   releaseWakeLock();
   
+  // Restore submit button
+  const btnSubmit = document.getElementById('btn-submit-code');
+  if (btnSubmit) {
+    btnSubmit.innerHTML = `<span>Connect to Sender</span><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>`;
+    btnSubmit.setAttribute('disabled', 'true');
+    btnSubmit.classList.add('opacity-50', 'cursor-not-allowed');
+    btnSubmit.classList.remove('cursor-pointer', 'hover:bg-accent-hover', 'active:scale-[0.98]', 'opacity-70');
+  }
+
   // Hide cancel/done buttons
   document.getElementById('btn-cancel-send')?.classList.remove('hidden');
   document.getElementById('btn-cancel-recv')?.classList.remove('hidden');
@@ -236,6 +332,10 @@ function resetState() {
   if (connectionTimeoutId) {
     clearTimeout(connectionTimeoutId);
     connectionTimeoutId = null;
+  }
+  if (serverTimeoutId) {
+    clearTimeout(serverTimeoutId);
+    serverTimeoutId = null;
   }
   if (speedInterval) {
     clearInterval(speedInterval);
@@ -253,6 +353,9 @@ function resetState() {
   receivedFiles = [];
   transferredBytes = 0;
   totalBytesToTransfer = 0;
+  fileMeta = [];
+  currentFileChunks = [];
+  receivingIdx = -1;
   updateConnectionStatus('disconnected');
 }
 
@@ -305,7 +408,7 @@ function handleFilesSelected(files: File[]) {
   const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
   const validFiles = files.filter(f => {
     if (f.size > MAX_FILE_SIZE) {
-      alert(`File "${f.name}" exceeds the 2GB browser limit and was removed to prevent memory crashes.`);
+      showToast(`File "${f.name}" exceeds the 2GB browser limit and was removed to prevent memory crashes.`);
       return false;
     }
     return true;
@@ -313,7 +416,28 @@ function handleFilesSelected(files: File[]) {
 
   if (validFiles.length === 0) return;
 
-  selectedFiles = [...selectedFiles, ...validFiles];
+  // Filter out duplicate files in the current selection queue
+  const uniqueFiles = validFiles.filter(f => {
+    const isDuplicate = selectedFiles.some(existing => 
+      existing.name === f.name && existing.size === f.size && existing.type === f.type
+    );
+    if (isDuplicate) {
+      showToast(`Duplicate file "${f.name}" was skipped.`);
+      return false;
+    }
+    return true;
+  });
+
+  if (uniqueFiles.length === 0) return;
+
+  selectedFiles = [...selectedFiles, ...uniqueFiles];
+  
+  // Cumulative transfer warning: 2.5GB warning cap
+  const totalSize = selectedFiles.reduce((acc, f) => acc + f.size, 0);
+  if (totalSize > 2.5 * 1024 * 1024 * 1024) {
+    showToast('Warning: Total size exceeds 2.5GB. Mobile browsers may crash due to memory limits.');
+  }
+
   updateSelectedFilesUI();
 }
 
@@ -387,8 +511,33 @@ function updateSelectedFilesUI() {
   totalSizeEl.textContent = formatBytes(totalSize);
 }
 
-// Generate Room Code and initialize PeerJS room
-function initializeSenderRoom() {
+// Universal copy to clipboard helper with legacy textarea fallback (Fix 4)
+function copyTextToClipboard(text: string): Promise<boolean> {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
+  }
+  
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return Promise.resolve(successful);
+  } catch (err) {
+    console.error('Fallback copy failed:', err);
+    return Promise.resolve(false);
+  }
+}
+
+// Generate Room Code and initialize PeerJS room (Fix 5, 9)
+function initializeSenderRoom(retryCount: number = 0) {
   resetState(); // Clean up previous connections and timeouts
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const displayEl = document.getElementById('room-code-display');
@@ -401,6 +550,15 @@ function initializeSenderRoom() {
   // Custom prefix to prevent ID collision in PeerJS public cloud
   const peerId = `fbeam-${code}`;
   
+  // Start 15-second room connection timeout (Fix 5)
+  serverTimeoutId = setTimeout(() => {
+    if (!myPeer || !myPeer.open) {
+      showToast('Failed to connect to signaling server. Timeout reached.');
+      resetState();
+      showScreen('s-home');
+    }
+  }, 15000) as unknown as number;
+
   // strict security configurations
   myPeer = new Peer(peerId, {
     debug: 1, // Only errors
@@ -413,6 +571,10 @@ function initializeSenderRoom() {
   });
 
   myPeer.on('open', () => {
+    if (serverTimeoutId) {
+      clearTimeout(serverTimeoutId);
+      serverTimeoutId = null;
+    }
     updateConnectionStatus('connecting', 'Waiting for Receiver');
     showScreen('s-send-offer');
     
@@ -450,11 +612,15 @@ function initializeSenderRoom() {
       const newCopyBtn = copyBtn.cloneNode(true) as HTMLElement;
       copyBtn.parentNode?.replaceChild(newCopyBtn, copyBtn);
       newCopyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(`Room Code: ${code}\nLink: ${receiverUrl}`).then(() => {
-          const originalHTML = newCopyBtn.innerHTML;
-          // Clean checkmark SVG transition
-          newCopyBtn.innerHTML = `<svg class="w-3.5 h-3.5 text-success animate-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>`;
-          setTimeout(() => { newCopyBtn.innerHTML = originalHTML; }, 2000);
+        copyTextToClipboard(`Room Code: ${code}\nLink: ${receiverUrl}`).then((success) => {
+          if (success) {
+            const originalHTML = newCopyBtn.innerHTML;
+            // Clean checkmark SVG transition
+            newCopyBtn.innerHTML = `<svg class="w-3.5 h-3.5 text-success animate-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>`;
+            setTimeout(() => { newCopyBtn.innerHTML = originalHTML; }, 2000);
+          } else {
+            showToast('Failed to copy. Copy manually or scan QR.');
+          }
         });
       });
     }
@@ -465,11 +631,41 @@ function initializeSenderRoom() {
     setupSenderConnection();
   });
 
-  myPeer.on('error', (err) => {
+  myPeer.on('error', (err: any) => {
+    if (serverTimeoutId) {
+      clearTimeout(serverTimeoutId);
+      serverTimeoutId = null;
+    }
+    
+    // Auto-collision check (Fix 9)
+    if (err.type === 'unavailable-id') {
+      if (retryCount < 3) {
+        console.warn(`ID collision detected, retrying (attempt ${retryCount + 1})...`);
+        if (myPeer) {
+          myPeer.destroy();
+          myPeer = null;
+        }
+        initializeSenderRoom(retryCount + 1);
+        return;
+      }
+    }
+
     console.error('Peer error:', err);
-    alert('Failed to establish room. Adblocker or strict firewall blocking connection. Retrying...');
+    showToast('Failed to establish room. Adblocker or strict firewall blocking connection.');
     resetState();
     showScreen('s-home');
+  });
+}
+
+// Monitor underlying WebRTC peer connection state changes
+function monitorPeerConnection(pc: RTCPeerConnection) {
+  pc.addEventListener('connectionstatechange', () => {
+    const state = pc.connectionState;
+    if (state === 'failed' || state === 'closed') {
+      showToast('WebRTC connection lost. Transfer aborted.');
+      resetState();
+      showScreen('s-home');
+    }
   });
 }
 
@@ -478,13 +674,16 @@ function setupSenderConnection() {
   if (!currentConn) return;
 
   currentConn.on('open', () => {
-    updateConnectionStatus('connected', 'Receiver Connected');
+    if (currentConn?.peerConnection) {
+      monitorPeerConnection(currentConn.peerConnection);
+    }
+    updateConnectionDiagnostics(); // Show candidate details
     startSendingPayload();
   });
 
   currentConn.on('close', () => {
     updateConnectionStatus('disconnected', 'Receiver Disconnected');
-    alert('Connection closed by receiver.');
+    showToast('Connection closed by receiver.');
     resetState();
     showScreen('s-home');
   });
@@ -507,7 +706,7 @@ async function startSendingPayload() {
   totalBytesToTransfer = selectedFiles.reduce((acc, f) => acc + f.size, 0);
   transferredBytes = 0;
   lastTransferredBytes = 0;
-
+  setProgressBarColor('accent', true); // Reset to accent indigo
 
   startSpeedTracker(true);
 
@@ -524,35 +723,70 @@ async function startSendingPayload() {
     metadata
   } as ControlMessage);
 
-  // Send files one by one
-  for (let i = 0; i < selectedFiles.length; i++) {
-    await sendSingleFile(selectedFiles[i], i);
-  }
+  try {
+    // Send files one by one
+    for (let i = 0; i < selectedFiles.length; i++) {
+      await sendSingleFile(selectedFiles[i], i);
+    }
 
-  // Finalize
-  currentConn.send({ type: 'complete' } as ControlMessage);
-  
-  if (speedInterval) {
-    clearInterval(speedInterval);
-    speedInterval = null;
-  }
+    // Finalize
+    currentConn.send({ type: 'complete' } as ControlMessage);
+    
+    if (speedInterval) {
+      clearInterval(speedInterval);
+      speedInterval = null;
+    }
 
-  const titleEl = document.getElementById('send-status-title');
-  if (titleEl) titleEl.textContent = 'Payload Transmitted!';
+    const titleEl = document.getElementById('send-status-title');
+    if (titleEl) titleEl.textContent = 'Payload Transmitted!';
+    setProgressBarColor('success', true);
 
-  // Hide cancel, show done button
-  document.getElementById('btn-cancel-send')?.classList.add('hidden');
-  const doneBtn = document.getElementById('btn-send-done');
-  if (doneBtn) {
-    doneBtn.classList.remove('hidden');
-    doneBtn.addEventListener('click', () => {
-      resetState();
-      showScreen('s-home');
+    // Hide cancel, show done button
+    document.getElementById('btn-cancel-send')?.classList.add('hidden');
+    const doneBtn = document.getElementById('btn-send-done');
+    if (doneBtn) {
+      doneBtn.classList.remove('hidden');
+      const newDoneBtn = doneBtn.cloneNode(true) as HTMLElement;
+      doneBtn.parentNode?.replaceChild(newDoneBtn, doneBtn);
+      newDoneBtn.addEventListener('click', () => {
+        resetState();
+        showScreen('s-home');
+      });
+    }
+
+    // Save to history
+    saveToHistory(selectedFiles.map(f => ({ name: f.name, size: f.size })), 'sent');
+  } catch (err) {
+    console.error('Payload transmission aborted:', err);
+    showToast('File transfer aborted due to a connection error.');
+    setProgressBarColor('error', true);
+    const titleEl = document.getElementById('send-status-title');
+    if (titleEl) titleEl.textContent = 'Transmission Failed';
+    
+    // Notify receiver if still open
+    if (currentConn && currentConn.open) {
+      try {
+        currentConn.send({
+          type: 'error',
+          errorMsg: 'File transfer aborted on sender side.'
+        } as ControlMessage);
+      } catch (_) {}
+    }
+    
+    // Mark queued/active files as aborted
+    selectedFiles.forEach((_, idx) => {
+      const statEl = document.getElementById(`send-status-${idx}`);
+      if (statEl && (statEl.textContent === 'Queued' || statEl.textContent === 'Transmitting')) {
+        statEl.textContent = 'Aborted';
+        statEl.className = 'font-bold text-[10px] uppercase tracking-wider text-red-500';
+      }
     });
-  }
 
-  // Save to history
-  saveToHistory(selectedFiles.map(f => ({ name: f.name, size: f.size })), 'sent');
+    if (speedInterval) {
+      clearInterval(speedInterval);
+      speedInterval = null;
+    }
+  }
 }
 
 // Build send queue UI
@@ -588,7 +822,9 @@ function sleep(ms: number) {
 
 // Send a single file chunk by chunk
 async function sendSingleFile(file: File, fileIndex: number) {
-  if (!currentConn) return;
+  if (!currentConn || !currentConn.open) {
+    throw new Error('Connection closed before sending file');
+  }
 
   // Update file queue UI to Active
   const statusEl = document.getElementById(`send-status-${fileIndex}`);
@@ -612,11 +848,24 @@ async function sendSingleFile(file: File, fileIndex: number) {
     // Check backpressure (bufferedAmount)
     // Safe guard: wait if buffer has more than 1MB to prevent memory bloat or crash
     while ((currentConn.dataChannel?.bufferedAmount ?? 0) > 1024 * 1024) {
+      if (!currentConn || !currentConn.open) {
+        throw new Error('Connection closed during backpressure check');
+      }
+      setProgressBarColor('warning', true); // Show warning orange color
       await sleep(35);
+    }
+    setProgressBarColor('accent', true); // Restore to default accent color
+
+    if (!currentConn || !currentConn.open) {
+      throw new Error('Connection closed before creating chunk');
     }
 
     const chunkSlice = file.slice(offset, offset + CHUNK_SIZE);
     const buffer = await chunkSlice.arrayBuffer();
+    
+    if (!currentConn || !currentConn.open) {
+      throw new Error('Connection closed before sending chunk');
+    }
     currentConn.send(buffer);
 
     offset += buffer.byteLength;
@@ -624,6 +873,10 @@ async function sendSingleFile(file: File, fileIndex: number) {
 
     // Update overall UI
     updateProgressUI(true);
+  }
+
+  if (!currentConn || !currentConn.open) {
+    throw new Error('Connection closed before ending file');
   }
 
   // Signal ending file
@@ -710,14 +963,23 @@ function setupCodeInputListeners() {
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Backspace') {
         const target = e.target as HTMLInputElement;
-        if (!target.value && idx > 0) {
-          inputs[idx - 1].focus();
+        e.preventDefault(); // Prevent standard backspace behavior
+        if (target.value !== '') {
+          target.value = '';
+        } else if (idx > 0) {
           inputs[idx - 1].value = '';
+          inputs[idx - 1].focus();
         }
+        checkEnableSubmit();
       } else if (e.key === 'ArrowLeft' && idx > 0) {
         inputs[idx - 1].focus();
       } else if (e.key === 'ArrowRight' && idx < 5) {
         inputs[idx + 1].focus();
+      } else if (e.key === 'Enter') {
+        const code = inputs.map((i) => i.value).join('');
+        if (/^\d{6}$/.test(code)) {
+          connectToSender(code);
+        }
       }
     });
 
@@ -732,12 +994,14 @@ function setupCodeInputListeners() {
           if (parsed) data = parsed;
         } catch (err) {}
       }
-      data = data.trim();
       
-      if (data && /^\d{6}$/.test(data)) {
+      // Sanitize pasted data to numeric only
+      const numericData = data.replace(/\D/g, '');
+      
+      if (numericData.length === 6) {
         e.preventDefault();
         for (let i = 0; i < 6; i++) {
-          inputs[i].value = data[i];
+          inputs[i].value = numericData[i];
         }
         inputs[5].focus();
         checkEnableSubmit();
@@ -747,10 +1011,21 @@ function setupCodeInputListeners() {
 
   function checkEnableSubmit() {
     const isFilled = inputs.every((input) => input.value !== '');
-    if (isFilled && btnSubmit) {
-      btnSubmit.removeAttribute('disabled');
+    if (btnSubmit) {
+      if (isFilled) {
+        btnSubmit.removeAttribute('disabled');
+        btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
+        btnSubmit.classList.add('cursor-pointer', 'hover:bg-accent-hover', 'active:scale-[0.98]');
+      } else {
+        btnSubmit.setAttribute('disabled', 'true');
+        btnSubmit.classList.add('opacity-50', 'cursor-not-allowed');
+        btnSubmit.classList.remove('cursor-pointer', 'hover:bg-accent-hover', 'active:scale-[0.98]');
+      }
     }
   }
+
+  // Set initial state of submit button
+  checkEnableSubmit();
 
   btnSubmit?.addEventListener('click', () => {
     const code = inputs.map((i) => i.value).join('');
@@ -780,12 +1055,22 @@ function setupCodeInputListeners() {
 function connectToSender(code: string) {
   resetState(); // Clear peer and timeouts first
   updateConnectionStatus('connecting', 'Locating Sender...');
+  
+  // UI: spinner inside submit button
+  const btnSubmit = document.getElementById('btn-submit-code');
+  if (btnSubmit) {
+    btnSubmit.innerHTML = `<div class="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin flex-shrink-0"></div><span>Connecting...</span>`;
+    btnSubmit.setAttribute('disabled', 'true');
+    btnSubmit.classList.add('opacity-70', 'cursor-not-allowed');
+    btnSubmit.classList.remove('cursor-pointer', 'hover:bg-accent-hover', 'active:scale-[0.98]', 'opacity-50');
+  }
+
   const peerId = `fbeam-${code}`;
 
   // Start 15-second connection timeout
   connectionTimeoutId = setTimeout(() => {
     if (!currentConn || !currentConn.open) {
-      alert('Connection timed out. Ensure both devices are on the same network and the code matches.');
+      showToast('Connection timed out. Ensure both devices are on the same network.');
       resetState();
       showScreen('s-home');
     }
@@ -815,7 +1100,7 @@ function connectToSender(code: string) {
       connectionTimeoutId = null;
     }
     console.error('Peer error:', err);
-    alert('Connecting failed. Ensure you are on the same local network or try again.');
+    showToast('Connecting failed. Ensure you are on the same network.');
     resetState();
     showScreen('s-home');
   });
@@ -825,25 +1110,26 @@ function connectToSender(code: string) {
 function setupReceiverConnection() {
   if (!currentConn) return;
 
-  let fileMeta: FileMetadata[] = [];
-  let currentFileChunks: ArrayBuffer[] = [];
-  let receivingIdx = -1;
-
   currentConn.on('open', () => {
     if (connectionTimeoutId) {
       clearTimeout(connectionTimeoutId);
       connectionTimeoutId = null;
     }
-    updateConnectionStatus('connected', 'Connected to Sender');
+    if (currentConn?.peerConnection) {
+      monitorPeerConnection(currentConn.peerConnection);
+    }
+    updateConnectionDiagnostics(); // Show candidate details
+    setProgressBarColor('accent', false); // Reset to accent
     showScreen('s-recv-xfer');
   });
 
   currentConn.on('data', (data: unknown) => {
     // Handle incoming data slices and control signals
-    if (data instanceof ArrayBuffer) {
+    if (data instanceof ArrayBuffer || data instanceof Blob) {
       // Chunk payload data
+      const byteLength = data instanceof ArrayBuffer ? data.byteLength : data.size;
       currentFileChunks.push(data);
-      transferredBytes += data.byteLength;
+      transferredBytes += byteLength;
       updateProgressUI(false);
     } else {
       // Control messages (JSON strings/objects)
@@ -865,6 +1151,14 @@ function setupReceiverConnection() {
         const meta = fileMeta[msg.fileIndex];
         const blob = new Blob(currentFileChunks, { type: meta.type });
         
+        // File size verification check
+        if (blob.size !== meta.size) {
+          showToast(`Integrity verification failed for "${meta.name}" (size mismatch).`);
+          updateFileStatusUI(msg.fileIndex, 'Corrupted', 'text-red-500 font-bold');
+          setProgressBarColor('error', false);
+          return;
+        }
+
         // Add to received list
         receivedFiles.push({
           name: meta.name,
@@ -878,6 +1172,25 @@ function setupReceiverConnection() {
         
         // Auto trigger download for government level UX
         triggerLocalDownload(blob, meta.name);
+      } else if (msg.type === 'error') {
+        showToast(msg.errorMsg || 'Transfer error occurred on sender side.');
+        setProgressBarColor('error', false);
+        const titleEl = document.getElementById('recv-status-title');
+        if (titleEl) titleEl.textContent = 'Transfer Failed';
+        if (speedInterval) {
+          clearInterval(speedInterval);
+          speedInterval = null;
+        }
+        // Mark currently receiving/queued files as aborted
+        if (fileMeta) {
+          fileMeta.forEach((_, idx) => {
+            const statEl = document.getElementById(`recv-status-${idx}`);
+            if (statEl && (statEl.textContent === 'Queued' || statEl.textContent === 'Receiving')) {
+              statEl.textContent = 'Aborted';
+              statEl.className = 'font-bold text-[10px] uppercase tracking-wider text-red-500';
+            }
+          });
+        }
       } else if (msg.type === 'complete') {
         if (speedInterval) {
           clearInterval(speedInterval);
@@ -886,6 +1199,7 @@ function setupReceiverConnection() {
 
         const titleEl = document.getElementById('recv-status-title');
         if (titleEl) titleEl.textContent = 'Payload Received!';
+        setProgressBarColor('success', false);
 
         // Hide cancel and show done button
         document.getElementById('btn-cancel-recv')?.classList.add('hidden');
@@ -906,7 +1220,7 @@ function setupReceiverConnection() {
 
   currentConn.on('close', () => {
     updateConnectionStatus('disconnected');
-    alert('Connection closed by sender.');
+    showToast('Connection closed by sender.');
     resetState();
     showScreen('s-home');
   });
@@ -1003,8 +1317,9 @@ function enableDownloadBtn(index: number, blob: Blob, filename: string) {
 
 // Trigger browser download safely
 function triggerLocalDownload(blob: Blob, filename: string) {
-  // Sanitize filename: strip dangerous symbols, cap length to 100 characters to prevent system issues
-  const sanitizedFilename = filename.replace(/[/\\?%*:|"<>\s]/g, '_').substring(0, 100);
+  // Sanitize filename: strip characters that are illegal in Windows/macOS/Linux paths
+  // Keep spaces and normal letters, replace illegal characters with underscores
+  const sanitizedFilename = filename.replace(/[\x00-\x1f\\/:*?"<>|]/g, '_').substring(0, 100);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -1021,6 +1336,19 @@ async function startCamera() {
   const statusEl = document.getElementById('scan-camera-status');
   if (!video) return;
 
+  // Check camera permissions state proactively
+  if (navigator.permissions && (navigator.permissions as any).query) {
+    try {
+      const permission = await navigator.permissions.query({ name: 'camera' as any });
+      if (permission.state === 'denied') {
+        showToast('Camera access denied. Please enable camera access in browser permissions.');
+        return;
+      }
+    } catch (err) {
+      console.warn('Permissions query failed:', err);
+    }
+  }
+
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: { 
@@ -1036,11 +1364,20 @@ async function startCamera() {
 
     cameraTimer = setInterval(() => {
       if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Downscale decoding canvas to max 480px width/height for CPU saving (Fix 2)
+        const maxDim = 480;
+        let w = video.videoWidth;
+        let h = video.videoHeight;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
         
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const imgData = ctx.getImageData(0, 0, w, h);
         const code = jsQR(imgData.data, imgData.width, imgData.height);
         
         if (code && code.data) {
@@ -1072,15 +1409,23 @@ async function startCamera() {
     console.error('Camera access error:', e);
     stopCamera();
     if (statusEl) statusEl.textContent = 'Camera blocked. Type code manually.';
-    alert('Failed to access camera. Please allow camera permissions or type the 6-digit room code manually.');
+    showToast('Failed to access camera. Please type the 6-digit room code manually.');
   }
 }
 
 // Local History Storage functions
 function saveToHistory(files: { name: string; size: number }[], direction: 'sent' | 'received') {
+  let list: HistoryItem[] = [];
   try {
     const raw = localStorage.getItem('fbeam_history') || '[]';
-    const list: HistoryItem[] = JSON.parse(raw);
+    try {
+      list = JSON.parse(raw);
+      if (!Array.isArray(list)) list = [];
+    } catch (_) {
+      localStorage.removeItem('fbeam_history');
+      list = [];
+    }
+    
     files.forEach(f => {
       list.unshift({
         name: f.name,
@@ -1090,7 +1435,20 @@ function saveToHistory(files: { name: string; size: number }[], direction: 'sent
       });
     });
     if (list.length > 20) list.length = 20; // Keep history compact
-    localStorage.setItem('fbeam_history', JSON.stringify(list));
+    
+    let saved = false;
+    while (!saved && list.length > 0) {
+      try {
+        localStorage.setItem('fbeam_history', JSON.stringify(list));
+        saved = true;
+      } catch (err) {
+        if (list.length > 0) {
+          list.pop(); // Drop oldest and retry
+        } else {
+          throw err;
+        }
+      }
+    }
     loadHistoryUI();
   } catch (err) {
     console.error('History save error:', err);
@@ -1104,7 +1462,14 @@ function loadHistoryUI() {
 
   try {
     const raw = localStorage.getItem('fbeam_history') || '[]';
-    const list: HistoryItem[] = JSON.parse(raw);
+    let list: HistoryItem[] = [];
+    try {
+      list = JSON.parse(raw);
+      if (!Array.isArray(list)) list = [];
+    } catch (_) {
+      localStorage.removeItem('fbeam_history');
+      list = [];
+    }
 
     if (list.length === 0) {
       card.classList.add('hidden');
@@ -1185,5 +1550,30 @@ document.getElementById('btn-pwa-install')?.addEventListener('click', () => {
       }
       deferredPrompt = null;
     });
+  }
+});
+
+// Handle page visibility change (Fix 3, 10)
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'hidden') {
+    // Release camera if tab is backgrounded / device locked (Fix 3)
+    if (cameraStream) {
+      wasCameraActive = true;
+      stopCamera();
+    }
+  } else if (document.visibilityState === 'visible') {
+    // Re-acquire screen wake lock during active transfers (Fix 10)
+    if (currentConn && currentConn.open && (transferredBytes < totalBytesToTransfer)) {
+      await requestWakeLock();
+    }
+
+    // Auto-resume camera if scanner was active (Fix 3)
+    if (wasCameraActive) {
+      wasCameraActive = false;
+      const recvOfferScreen = document.getElementById('s-recv-offer');
+      if (recvOfferScreen && !recvOfferScreen.classList.contains('hidden')) {
+        await startCamera();
+      }
+    }
   }
 });
