@@ -495,9 +495,10 @@ function updateSelectedFilesUI() {
 
     // Delete button
     const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'text-text-secondary hover:text-red-400 p-1 transition cursor-pointer';
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'text-text-secondary hover:text-red-400 p-1 transition cursor-pointer flex-shrink-0';
     deleteBtn.ariaLabel = `Remove ${file.name}`;
-    deleteBtn.innerHTML = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    deleteBtn.innerHTML = `<svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       selectedFiles.splice(index, 1);
