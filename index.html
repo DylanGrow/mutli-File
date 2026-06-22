@@ -63,10 +63,20 @@
       </div>
     </div>
     
-    <!-- Connection Status Badge -->
-    <div id="conn-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-border text-xs font-semibold text-text-secondary">
-      <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" id="conn-dot"></span>
-      <span id="conn-status-text">Disconnected</span>
+    <div class="flex items-center gap-2">
+      <!-- Settings Button (Fix 2) -->
+      <button id="btn-settings-toggle" class="w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Open Settings">
+        <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+
+      <!-- Connection Status Badge -->
+      <div id="conn-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-border text-xs font-semibold text-text-secondary">
+        <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" id="conn-dot"></span>
+        <span id="conn-status-text">Disconnected</span>
+      </div>
     </div>
   </header>
 
@@ -138,6 +148,43 @@
       </article>
     </section>
 
+    <!-- SCREEN: Settings (Fix 2) -->
+    <section id="s-settings" class="screen hidden flex flex-col gap-5" aria-labelledby="settings-heading">
+      <div class="flex items-center gap-3">
+        <button class="btn-back-settings w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
+          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Advanced Settings</span>
+      </div>
+
+      <h2 id="settings-heading" class="text-xl font-bold tracking-tight">Advanced Configurations</h2>
+      
+      <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
+        <div>
+          <label class="block text-xs font-bold text-text-secondary uppercase mb-2">Custom STUN/TURN Configurations (JSON)</label>
+          <textarea id="settings-ice-json" rows="6" class="w-full bg-slate-950 border border-border rounded-xl p-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent transition" placeholder='[&#10;  { "urls": "stun:stun.l.google.com:19302" }&#10;]'></textarea>
+          <span class="block text-[9px] text-text-secondary mt-1.5 leading-normal">Enter custom ICE configuration as a JSON array of RTCIceServer objects. Leave blank to use defaults.</span>
+        </div>
+
+        <div class="flex items-center justify-between border-t border-border pt-4">
+          <div>
+            <label class="block text-xs font-bold text-text-primary">Dynamic Chunk Tuning</label>
+            <span class="block text-[9px] text-text-secondary">Adapt WebRTC chunk sizing based on throughput speed.</span>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="settings-chk-chunk-tune" class="sr-only peer" checked>
+            <div class="w-9 h-5 bg-slate-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-slate-400 after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-accent peer-checked:after:bg-white"></div>
+          </label>
+        </div>
+        
+        <button id="btn-save-settings" class="w-full py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-2.5 active:scale-[0.98] transition cursor-pointer">
+          Save Settings
+        </button>
+      </div>
+    </section>
+
     <!-- SCREEN: Send - File Selection -->
     <section id="s-send-file" class="screen hidden flex flex-col gap-5" aria-labelledby="send-file-heading">
       <div class="flex items-center gap-3">
@@ -154,6 +201,7 @@
       <!-- Drag & Drop Zone -->
       <div class="border-2 border-dashed border-border hover:border-accent/60 bg-surface/50 rounded-2xl p-8 text-center cursor-pointer active:scale-[0.99] transition" id="file-drop-zone">
         <input type="file" id="file-input-el" class="hidden" multiple>
+        <input type="file" id="folder-input-el" class="hidden" webkitdirectory directory multiple>
         <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-border flex items-center justify-center mx-auto mb-4">
           <svg class="w-6 h-6 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -162,6 +210,7 @@
         </div>
         <p class="text-sm font-bold text-text-primary mb-1">Click or drag files here</p>
         <p class="text-xs text-text-secondary">Any file type, no size limit</p>
+        <p class="text-xs text-text-secondary mt-2">or <span id="btn-select-folder" class="text-accent underline cursor-pointer hover:text-accent-hover font-semibold">select a folder</span></p>
       </div>
 
       <!-- File List -->
@@ -395,13 +444,24 @@
         </div>
       </div>
 
-      <!-- Done Action -->
-      <button id="btn-recv-done" class="hidden w-full py-4 px-6 rounded-2xl bg-success text-bg font-bold flex items-center justify-center gap-2 hover:bg-success-hover transition cursor-pointer">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="20 6 9 17 4 12"/>
-        </svg>
-        Done — Receive More
-      </button>
+      <!-- Done / ZIP Actions -->
+      <div class="flex flex-col gap-2">
+        <button id="btn-download-zip" class="hidden w-full py-4 px-6 rounded-2xl bg-accent text-white font-bold flex items-center justify-center gap-2 hover:bg-accent-hover transition cursor-pointer">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download All as ZIP
+        </button>
+
+        <button id="btn-recv-done" class="hidden w-full py-4 px-6 rounded-2xl bg-success text-bg font-bold flex items-center justify-center gap-2 hover:bg-success-hover transition cursor-pointer">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Done — Receive More
+        </button>
+      </div>
 
       <!-- Cancel Action -->
       <button id="btn-cancel-recv" class="w-full py-3 px-5 rounded-xl bg-red-950/20 border border-red-500/20 text-red-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-950/30 transition cursor-pointer">
@@ -424,6 +484,19 @@
     </div>
     <button id="btn-pwa-install" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
       Install
+    </button>
+  </div>
+
+  <!-- PWA Update Reload Toast (Fix 7) -->
+  <div id="pwa-update-toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm p-4 rounded-2xl glass-panel items-center justify-between gap-4 border-accent/30 bg-accent/10 shadow-2xl z-50 animate-slide-up">
+    <div class="flex-1 min-w-0">
+      <h3 class="text-xs font-extrabold uppercase tracking-wider text-text-primary mb-0.5">Update Available</h3>
+      <p class="text-[10px] text-text-secondary leading-normal">
+        A new version of FileBeam is ready. Reload to update.
+      </p>
+    </div>
+    <button id="btn-pwa-reload" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
+      Reload
     </button>
   </div>
 

@@ -116,4 +116,14 @@ button, .btn, .btn-back {
   background: rgba(99, 102, 241, 0.4);
 }
 
+/* Slide Up Animation for PWA Toast (Fix 7) */
+@keyframes slideUp {
+  0% { transform: translate(-50%, 150%); opacity: 0; }
+  100% { transform: translate(-50%, 0); opacity: 1; }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 

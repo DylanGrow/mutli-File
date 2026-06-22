@@ -7,8 +7,8 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'inline',
+      registerType: 'prompt',
+      injectRegister: false,
       manifest: {
         name: 'FileBeam - Secure Peer-to-Peer File Transfer',
         short_name: 'FileBeam',

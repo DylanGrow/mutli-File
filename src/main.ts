@@ -2,12 +2,18 @@ import { Peer, type DataConnection } from 'peerjs';
 import jsQR from 'jsqr';
 import QRCode from 'qrcode';
 
+// Extended File supporting relative path (Fix 4)
+interface ExtendedFile extends File {
+  relativePath?: string;
+}
+
 // Typings for file transfers
 interface FileMetadata {
   name: string;
   size: number;
   type: string;
   fileIndex: number;
+  path?: string; // Relative path for folder preservation
 }
 
 interface ControlMessage {
@@ -17,11 +23,312 @@ interface ControlMessage {
   errorMsg?: string;
 }
 
+// Cryptographic helpers for zero-knowledge end-to-end encryption (Fix 1)
+function bufferToBase64(buf: ArrayBuffer): string {
+  const bin = String.fromCharCode(...new Uint8Array(buf));
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64ToBuffer(str: string): ArrayBuffer {
+  let b64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4) b64 += '=';
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    buf[i] = bin.charCodeAt(i);
+  }
+  return buf.buffer;
+}
+
+async function generateEncryptionKey(): Promise<CryptoKey> {
+  return crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function exportKeyToBase64(key: CryptoKey): Promise<string> {
+  const raw = await crypto.subtle.exportKey('raw', key);
+  return bufferToBase64(raw);
+}
+
+async function importKeyFromBase64(base64Str: string): Promise<CryptoKey> {
+  const buf = base64ToBuffer(base64Str);
+  return crypto.subtle.importKey(
+    'raw',
+    buf,
+    { name: 'AES-GCM' },
+    true,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function deriveKeyFromCode(code: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const salt = enc.encode('filebeam-salt-1337');
+  const baseKey = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(code),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveKey']
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: salt,
+      iterations: 10000,
+      hash: 'SHA-256'
+    },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptChunk(chunk: ArrayBuffer, key: CryptoKey): Promise<ArrayBuffer> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    chunk
+  );
+  const packed = new Uint8Array(iv.length + encrypted.byteLength);
+  packed.set(iv, 0);
+  packed.set(new Uint8Array(encrypted), iv.length);
+  return packed.buffer;
+}
+
+async function decryptChunk(packedBuffer: ArrayBuffer, key: CryptoKey): Promise<ArrayBuffer> {
+  const iv = new Uint8Array(packedBuffer, 0, 12);
+  const encryptedData = new Uint8Array(packedBuffer, 12);
+  return crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    encryptedData
+  );
+}
+
+// Fetch ICE servers configured in Settings (Fix 2)
+function getIceServers(): RTCIceServer[] {
+  const custom = localStorage.getItem('fb_ice_config');
+  if (custom) {
+    try {
+      const parsed = JSON.parse(custom);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    } catch (_) {}
+  }
+  return [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:global.stun.twilio.com:3478' }
+  ];
+}
+
+// Traverse directories recursively for folder upload (Fix 4)
+async function traverseDirectoryEntry(entry: any, path: string = ''): Promise<ExtendedFile[]> {
+  const files: ExtendedFile[] = [];
+  if (entry.isFile) {
+    const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
+    const extFile = file as ExtendedFile;
+    extFile.relativePath = path + entry.name;
+    files.push(extFile);
+  } else if (entry.isDirectory) {
+    const dirReader = entry.createReader();
+    const entries = await new Promise<any[]>((resolve) => {
+      const allEntries: any[] = [];
+      const readAll = () => {
+        dirReader.readEntries((results: any[]) => {
+          if (results.length === 0) {
+            resolve(allEntries);
+          } else {
+            allEntries.push(...results);
+            readAll();
+          }
+        }, () => resolve(allEntries));
+      };
+      readAll();
+    });
+    for (const subEntry of entries) {
+      const subFiles = await traverseDirectoryEntry(subEntry, path + entry.name + '/');
+      files.push(...subFiles);
+    }
+  }
+  return files;
+}
+
+// Create an uncompressed ZIP client-side (Fix 3)
+function createUncompressedZip(files: { name: string; blob: Blob }[]): Promise<Blob> {
+  return new Promise(async (resolve) => {
+    const buffers: ArrayBuffer[] = [];
+    const localHeaders: { offset: number; nameBytes: Uint8Array; size: number; crc: number; name: string }[] = [];
+    let currentOffset = 0;
+
+    const makeCRCTable = () => {
+      let c;
+      const crcTable = [];
+      for (let n = 0; n < 256; n++) {
+        c = n;
+        for (let k = 0; k < 8; k++) {
+          c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1));
+        }
+        crcTable[n] = c;
+      }
+      return crcTable;
+    };
+    const crcTable = makeCRCTable();
+    const calculateCRC32 = (arr: Uint8Array): number => {
+      let crc = 0 ^ (-1);
+      for (let i = 0; i < arr.length; i++) {
+        crc = (crc >>> 8) ^ crcTable[(crc ^ arr[i]) & 0xFF];
+      }
+      return (crc ^ (-1)) >>> 0;
+    };
+
+    const getDosTime = (date: Date): { date: number; time: number } => {
+      const year = date.getFullYear() - 1980;
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const hour = date.getHours();
+      const min = date.getMinutes();
+      const sec = Math.floor(date.getSeconds() / 2);
+      return {
+        date: (year << 9) | (month << 5) | day,
+        time: (hour << 11) | (min << 5) | sec
+      };
+    };
+    const now = new Date();
+    const dos = getDosTime(now);
+
+    for (const f of files) {
+      const arrayBuf = await f.blob.arrayBuffer();
+      const fileData = new Uint8Array(arrayBuf);
+      const nameBytes = new TextEncoder().encode(f.name);
+      const crc = calculateCRC32(fileData);
+
+      const header = new Uint8Array(30 + nameBytes.length);
+      const view = new DataView(header.buffer);
+      
+      view.setUint32(0, 0x04034b50, true);
+      view.setUint16(4, 10, true);
+      view.setUint16(6, 0, true);
+      view.setUint16(8, 0, true);
+      view.setUint16(10, dos.time, true);
+      view.setUint16(12, dos.date, true);
+      view.setUint32(14, crc, true);
+      view.setUint32(18, fileData.length, true);
+      view.setUint32(22, fileData.length, true);
+      view.setUint16(26, nameBytes.length, true);
+      view.setUint16(28, 0, true);
+      header.set(nameBytes, 30);
+
+      localHeaders.push({
+        offset: currentOffset,
+        nameBytes,
+        size: fileData.length,
+        crc,
+        name: f.name
+      });
+
+      buffers.push(header.buffer);
+      buffers.push(arrayBuf);
+
+      currentOffset += header.length + fileData.length;
+    }
+
+    let centralDirSize = 0;
+    const centralDirBuffers: ArrayBuffer[] = [];
+    for (const h of localHeaders) {
+      const cdHeader = new Uint8Array(46 + h.nameBytes.length);
+      const view = new DataView(cdHeader.buffer);
+
+      view.setUint32(0, 0x02014b50, true);
+      view.setUint16(4, 10, true);
+      view.setUint16(6, 10, true);
+      view.setUint8(8, 0);
+      view.setUint16(10, 0, true);
+      view.setUint16(12, dos.time, true);
+      view.setUint16(14, dos.date, true);
+      view.setUint32(16, h.crc, true);
+      view.setUint32(20, h.size, true);
+      view.setUint32(24, h.size, true);
+      view.setUint16(28, h.nameBytes.length, true);
+      view.setUint16(30, 0, true);
+      view.setUint16(32, 0, true);
+      view.setUint16(34, 0, true);
+      view.setUint16(36, 0, true);
+      view.setUint32(38, 0, true);
+      view.setUint32(42, h.offset, true);
+      cdHeader.set(h.nameBytes, 46);
+
+      centralDirBuffers.push(cdHeader.buffer);
+      centralDirSize += cdHeader.length;
+    }
+
+    const eocd = new Uint8Array(22);
+    const view = new DataView(eocd.buffer);
+    view.setUint32(0, 0x06054b50, true);
+    view.setUint16(4, 0, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, localHeaders.length, true);
+    view.setUint16(10, localHeaders.length, true);
+    view.setUint32(12, centralDirSize, true);
+    view.setUint32(16, currentOffset, true);
+    view.setUint16(20, 0, true);
+
+    resolve(new Blob([...buffers, ...centralDirBuffers, eocd.buffer], { type: 'application/zip' }));
+  });
+}
+
+// Service worker watcher for reload-on-update (Fix 7)
+if ('serviceWorker' in navigator && !window.location.host.includes('localhost') && !window.location.host.includes('127.0.0.1')) {
+  navigator.serviceWorker.register('./sw.js').then((reg) => {
+    if (reg.waiting) {
+      showUpdateToast(reg.waiting);
+    }
+    reg.addEventListener('updatefound', () => {
+      const newWorker = reg.installing;
+      if (newWorker) {
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateToast(newWorker);
+          }
+        });
+      }
+    });
+  });
+
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+      refreshing = true;
+      window.location.reload();
+    }
+  });
+}
+
+function showUpdateToast(worker: ServiceWorker) {
+  const toast = document.getElementById('pwa-update-toast');
+  const reloadBtn = document.getElementById('btn-pwa-reload');
+  if (toast && reloadBtn) {
+    toast.classList.remove('hidden');
+    toast.classList.add('flex');
+    reloadBtn.onclick = () => {
+      worker.postMessage({ type: 'SKIP_WAITING' });
+    };
+  }
+}
+
 // State variables
 let myPeer: Peer | null = null;
 let currentConn: DataConnection | null = null;
-let selectedFiles: File[] = [];
+let selectedFiles: ExtendedFile[] = [];
 let receivedFiles: { name: string; blob: Blob; size: number }[] = [];
+let transferKey: CryptoKey | null = null; // AES key for end-to-end encryption (Fix 1)
+let isDynamicChunkTuningEnabled = true; // Dynamic chunk size (Fix 5)
 let connectionTimeoutId: number | null = null; // Connection timeout tracker
 let serverTimeoutId: number | null = null; // Server timeout tracker
 let wakeLock: any = null; // Screen WakeLock reference
@@ -331,10 +638,20 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Check URL params for room code scan fallback
-function checkUrlParams() {
+async function checkUrlParams() {
   const urlParams = new URLSearchParams(window.location.search);
   const room = urlParams.get('room');
   if (room && /^\d{6}$/.test(room)) {
+    // Check if key hash is present in URL (Fix 1)
+    const hash = window.location.hash;
+    const match = hash.match(/key=([A-Za-z0-9_-]+)/);
+    if (match) {
+      try {
+        transferKey = await importKeyFromBase64(match[1]);
+      } catch (err) {
+        console.warn('Failed to parse URL hash key:', err);
+      }
+    }
     // Fill room code inputs
     showScreen('s-recv-offer');
     for (let i = 0; i < 6; i++) {
@@ -399,6 +716,56 @@ function setupHomeListeners() {
     localStorage.removeItem('fbeam_history');
     loadHistoryUI();
   });
+
+  // Settings gear button click listener (Fix 2)
+  document.getElementById('btn-settings-toggle')?.addEventListener('click', () => {
+    showScreen('s-settings');
+    const iceJsonEl = document.getElementById('settings-ice-json') as HTMLTextAreaElement;
+    const chunkTuneEl = document.getElementById('settings-chk-chunk-tune') as HTMLInputElement;
+    if (iceJsonEl) {
+      const stored = localStorage.getItem('fb_ice_config') || '';
+      iceJsonEl.value = stored;
+    }
+    if (chunkTuneEl) {
+      chunkTuneEl.checked = isDynamicChunkTuningEnabled;
+    }
+  });
+
+  // Settings Back Button click listener (Fix 2)
+  document.querySelectorAll('.btn-back-settings').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      showScreen('s-home');
+    });
+  });
+
+  // Save settings button click listener (Fix 2)
+  document.getElementById('btn-save-settings')?.addEventListener('click', () => {
+    const iceJsonEl = document.getElementById('settings-ice-json') as HTMLTextAreaElement;
+    const chunkTuneEl = document.getElementById('settings-chk-chunk-tune') as HTMLInputElement;
+    if (iceJsonEl) {
+      const val = iceJsonEl.value.trim();
+      if (val === '') {
+        localStorage.removeItem('fb_ice_config');
+      } else {
+        try {
+          const parsed = JSON.parse(val);
+          if (!Array.isArray(parsed)) {
+            showToast('ICE config must be a JSON array of RTCIceServer objects.');
+            return;
+          }
+          localStorage.setItem('fb_ice_config', JSON.stringify(parsed, null, 2));
+        } catch (err) {
+          showToast('Invalid JSON syntax in ICE configuration.');
+          return;
+        }
+      }
+    }
+    if (chunkTuneEl) {
+      isDynamicChunkTuningEnabled = chunkTuneEl.checked;
+    }
+    showToast('Settings saved successfully.');
+    showScreen('s-home');
+  });
 }
 
 // Reset state on disconnect/back
@@ -449,6 +816,8 @@ function resetState() {
   currentFileChunks = [];
   receivingIdx = -1;
   isConnecting = false;
+  transferKey = null; // Clear key on reset (Fix 1)
+  document.getElementById('btn-download-zip')?.classList.add('hidden'); // Hide ZIP button on reset (Fix 3)
   stopHeartbeat();
   updateConnectionStatus('disconnected');
 }
@@ -457,11 +826,33 @@ function resetState() {
 function setupFileSelectionListeners() {
   const dropZone = document.getElementById('file-drop-zone');
   const fileInput = document.getElementById('file-input-el') as HTMLInputElement;
+  const folderInput = document.getElementById('folder-input-el') as HTMLInputElement;
   const btnCreateRoom = document.getElementById('btn-create-room');
 
   if (!dropZone || !fileInput) return;
 
   dropZone.addEventListener('click', () => fileInput.click());
+
+  // Folder selection trigger (Fix 4)
+  document.getElementById('btn-select-folder')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    folderInput?.click();
+  });
+
+  folderInput?.addEventListener('change', (e) => {
+    const target = e.target as HTMLInputElement;
+    if (target.files) {
+      const filesArr = Array.from(target.files) as ExtendedFile[];
+      filesArr.forEach(f => {
+        if (f.webkitRelativePath) {
+          f.relativePath = f.webkitRelativePath;
+        }
+      });
+      handleFilesSelected(filesArr);
+      folderInput.value = '';
+    }
+  });
 
   dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -472,10 +863,26 @@ function setupFileSelectionListeners() {
     dropZone.classList.remove('border-accent', 'bg-accent/5');
   });
 
-  dropZone.addEventListener('drop', (e) => {
+  dropZone.addEventListener('drop', async (e) => {
     e.preventDefault();
     dropZone.classList.remove('border-accent', 'bg-accent/5');
-    if (e.dataTransfer?.files) {
+    if (e.dataTransfer?.items) {
+      const filePromises: Promise<ExtendedFile[]>[] = [];
+      for (let i = 0; i < e.dataTransfer.items.length; i++) {
+        const item = e.dataTransfer.items[i];
+        const entry = item.webkitGetAsEntry?.();
+        if (entry) {
+          filePromises.push(traverseDirectoryEntry(entry));
+        } else {
+          const file = item.getAsFile();
+          if (file) {
+            filePromises.push(Promise.resolve([file as ExtendedFile]));
+          }
+        }
+      }
+      const results = await Promise.all(filePromises);
+      handleFilesSelected(results.flat());
+    } else if (e.dataTransfer?.files) {
       handleFilesSelected(Array.from(e.dataTransfer.files));
     }
   });
@@ -532,7 +939,7 @@ function setupFileSelectionListeners() {
     }
   });
 
-  window.addEventListener('drop', (e) => {
+  window.addEventListener('drop', async (e) => {
     e.preventDefault();
     dragCounter = 0;
     if (dragOverlay) {
@@ -541,7 +948,23 @@ function setupFileSelectionListeners() {
     }
     const sendFileScreen = document.getElementById('s-send-file');
     if (sendFileScreen && !sendFileScreen.classList.contains('hidden')) {
-      if (e.dataTransfer?.files) {
+      if (e.dataTransfer?.items) {
+        const filePromises: Promise<ExtendedFile[]>[] = [];
+        for (let i = 0; i < e.dataTransfer.items.length; i++) {
+          const item = e.dataTransfer.items[i];
+          const entry = item.webkitGetAsEntry?.();
+          if (entry) {
+            filePromises.push(traverseDirectoryEntry(entry));
+          } else {
+            const file = item.getAsFile();
+            if (file) {
+              filePromises.push(Promise.resolve([file as ExtendedFile]));
+            }
+          }
+        }
+        const results = await Promise.all(filePromises);
+        handleFilesSelected(results.flat());
+      } else if (e.dataTransfer?.files) {
         handleFilesSelected(Array.from(e.dataTransfer.files));
       }
     }
@@ -549,7 +972,7 @@ function setupFileSelectionListeners() {
 }
 
 // Handle selected files
-function handleFilesSelected(files: File[]) {
+function handleFilesSelected(files: ExtendedFile[]) {
   if (files.length === 0) return;
   
   // Max file size limit: 2GB (prevent browser tab memory crashes)
@@ -630,7 +1053,7 @@ function updateSelectedFilesUI() {
 
     const nameText = document.createElement('p');
     nameText.className = 'text-xs font-bold text-text-primary truncate max-w-[180px]';
-    nameText.textContent = file.name; // Secure: textContent is safe from XSS
+    nameText.textContent = file.relativePath || file.name; // Secure: textContent is safe from XSS
 
     const sizeText = document.createElement('p');
     sizeText.className = 'text-[10px] text-text-secondary font-semibold';
@@ -686,7 +1109,7 @@ function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 // Generate Room Code and initialize PeerJS room (Fix 5, 9)
-function initializeSenderRoom(retryCount: number = 0) {
+async function initializeSenderRoom(retryCount: number = 0) {
   resetState(); // Clean up previous connections and timeouts
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const displayEl = document.getElementById('room-code-display');
@@ -696,6 +1119,17 @@ function initializeSenderRoom(retryCount: number = 0) {
 
   updateConnectionStatus('connecting', 'Creating Room...');
   
+  // Generate random AES key for end-to-end encryption (Fix 1)
+  try {
+    transferKey = await generateEncryptionKey();
+  } catch (err) {
+    console.error('Failed to generate encryption key:', err);
+    showToast('Encryption setup failed.');
+    resetState();
+    showScreen('s-home');
+    return;
+  }
+
   // Custom prefix to prevent ID collision in PeerJS public cloud
   const peerId = `fbeam-${code}`;
   
@@ -712,14 +1146,11 @@ function initializeSenderRoom(retryCount: number = 0) {
   myPeer = new Peer(peerId, {
     debug: 1, // Only errors
     config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-      ]
+      iceServers: getIceServers() // Use saved custom ICE servers (Fix 2)
     }
   });
 
-  myPeer.on('open', () => {
+  myPeer.on('open', async () => {
     if (serverTimeoutId) {
       clearTimeout(serverTimeoutId);
       serverTimeoutId = null;
@@ -728,7 +1159,8 @@ function initializeSenderRoom(retryCount: number = 0) {
     showScreen('s-send-offer');
     
     // Generate QR code safely. The URL redirects receiver directly.
-    const receiverUrl = `${window.location.origin}${window.location.pathname}?room=${code}`;
+    const keyStr = await exportKeyToBase64(transferKey!);
+    const receiverUrl = `${window.location.origin}${window.location.pathname}?room=${code}#key=${keyStr}`;
     const qrContainer = document.getElementById('send-qr-container');
     if (qrContainer) {
       qrContainer.innerHTML = '';
@@ -875,7 +1307,8 @@ async function startSendingPayload() {
     name: file.name,
     size: file.size,
     type: file.type || 'application/octet-stream',
-    fileIndex: idx
+    fileIndex: idx,
+    path: file.relativePath || file.name // Record relative path (Fix 4)
   }));
 
   currentConn.send({
@@ -1004,12 +1437,26 @@ async function sendSingleFile(file: File, fileIndex: number) {
     fileIndex
   } as ControlMessage);
 
-  const CHUNK_SIZE = 1024 * 16; // 16KB chunks (iOS Safari caps compatible)
+  let chunkSize = 1024 * 16; // 16KB initial chunk size (Fix 5)
   let offset = 0;
 
   while (offset < file.size) {
+    // Dynamic Chunk size tuning (Fix 5)
+    if (isDynamicChunkTuningEnabled && smoothSpeed > 100) {
+      if (smoothSpeed > 2 * 1024 * 1024) {
+        chunkSize = 1024 * 128; // 128KB
+      } else if (smoothSpeed > 1024 * 1024) {
+        chunkSize = 1024 * 64; // 64KB
+      } else if (smoothSpeed > 256 * 1024) {
+        chunkSize = 1024 * 32; // 32KB
+      } else {
+        chunkSize = 1024 * 16; // 16KB
+      }
+    } else {
+      chunkSize = 1024 * 16;
+    }
+
     // Check backpressure (bufferedAmount)
-    // Safe guard: wait if buffer has more than 1MB to prevent memory bloat or crash
     while ((currentConn.dataChannel?.bufferedAmount ?? 0) > 1024 * 1024) {
       if (!currentConn || !currentConn.open) {
         throw new Error('Connection closed during backpressure check');
@@ -1023,16 +1470,44 @@ async function sendSingleFile(file: File, fileIndex: number) {
       throw new Error('Connection closed before creating chunk');
     }
 
-    const chunkSlice = file.slice(offset, offset + CHUNK_SIZE);
-    const buffer = await chunkSlice.arrayBuffer();
-    
-    if (!currentConn || !currentConn.open) {
-      throw new Error('Connection closed before sending chunk');
-    }
-    currentConn.send(buffer);
+    const chunkSlice = file.slice(offset, offset + chunkSize);
+    const rawBuffer = await chunkSlice.arrayBuffer();
+    const rawLength = rawBuffer.byteLength;
 
-    offset += buffer.byteLength;
-    transferredBytes += buffer.byteLength;
+    let bufferToSend = rawBuffer;
+    if (transferKey) {
+      try {
+        bufferToSend = await encryptChunk(rawBuffer, transferKey);
+      } catch (encErr) {
+        console.error('Encryption failed:', encErr);
+        throw new Error('Encryption failed');
+      }
+    }
+
+    // Auto-retry chunk send (Fix 8)
+    let attempts = 0;
+    const maxAttempts = 3;
+    let sentSuccessfully = false;
+
+    while (attempts < maxAttempts && !sentSuccessfully) {
+      if (!currentConn || !currentConn.open) {
+        throw new Error('Connection closed before sending chunk');
+      }
+      try {
+        currentConn.send(bufferToSend);
+        sentSuccessfully = true;
+      } catch (sendErr) {
+        attempts++;
+        console.warn(`Chunk send attempt ${attempts} failed:`, sendErr);
+        if (attempts >= maxAttempts) {
+          throw sendErr;
+        }
+        await sleep(attempts * 100); // Backoff: 100ms, 200ms...
+      }
+    }
+
+    offset += rawLength;
+    transferredBytes += rawLength;
 
     // Update overall UI
     updateProgressUI(true);
@@ -1156,11 +1631,19 @@ function setupCodeInputListeners() {
     input.addEventListener('paste', (e) => {
       let data = e.clipboardData?.getData('text') || '';
       
-      // Extract code if pasting full URL
+      // Extract code and key if pasting full URL (Fix 9)
       if (data.includes('room=')) {
         try {
-          const parsed = new URL(data).searchParams.get('room');
+          const url = new URL(data);
+          const parsed = url.searchParams.get('room');
           if (parsed) data = parsed;
+          const hashMatch = url.hash.match(/key=([A-Za-z0-9_-]+)/);
+          if (hashMatch) {
+            const keyStr = hashMatch[1];
+            importKeyFromBase64(keyStr).then(key => {
+              transferKey = key;
+            }).catch(err => console.warn('Pasted URL key import failed:', err));
+          }
         } catch (err) {}
       }
       
@@ -1221,11 +1704,26 @@ function setupCodeInputListeners() {
 }
 
 // Connect to the sender peer room
-function connectToSender(code: string) {
+async function connectToSender(code: string) {
   if (isConnecting) return;
   isConnecting = true;
+
+  // Derivation of key (Fix 1)
+  let keyToUse = transferKey;
+  if (!keyToUse) {
+    try {
+      keyToUse = await deriveKeyFromCode(code);
+    } catch (err) {
+      console.error('Failed to derive encryption key:', err);
+      showToast('Key derivation failed.');
+      isConnecting = false;
+      return;
+    }
+  }
+
   resetState(); // Clear peer and timeouts first
   isConnecting = true; // Set back to true since resetState cleared it
+  transferKey = keyToUse; // Restore/set key to use
   updateConnectionStatus('connecting', 'Locating Sender...');
   
   // UI: spinner inside submit button
@@ -1251,10 +1749,7 @@ function connectToSender(code: string) {
   myPeer = new Peer({
     debug: 1,
     config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' }
-      ]
+      iceServers: getIceServers() // Use saved custom ICE servers (Fix 2)
     }
   });
 
@@ -1302,13 +1797,29 @@ function setupReceiverConnection() {
     showScreen('s-recv-xfer');
   });
 
-  currentConn.on('data', (data: unknown) => {
+  currentConn.on('data', async (data: unknown) => {
     lastHeartbeatTime = Date.now(); // Track any incoming data as active heartbeat
     // Handle incoming data slices and control signals
     if (data instanceof ArrayBuffer || data instanceof Blob) {
+      let chunkData = data;
+      if (transferKey) {
+        try {
+          const arrayBuffer = data instanceof ArrayBuffer ? data : await data.arrayBuffer();
+          const decrypted = await decryptChunk(arrayBuffer, transferKey);
+          chunkData = decrypted;
+        } catch (decErr) {
+          console.error('Decryption failed:', decErr);
+          showToast('Decryption failed. Key mismatch or corrupted chunk.');
+          setProgressBarColor('error', false);
+          resetState();
+          showScreen('s-home');
+          return;
+        }
+      }
+
       // Chunk payload data
-      const byteLength = data instanceof ArrayBuffer ? data.byteLength : data.size;
-      currentFileChunks.push(data);
+      const byteLength = chunkData instanceof ArrayBuffer ? chunkData.byteLength : chunkData.size;
+      currentFileChunks.push(chunkData);
       transferredBytes += byteLength;
       updateProgressUI(false);
     } else {
@@ -1326,6 +1837,19 @@ function setupReceiverConnection() {
         totalBytesToTransfer = fileMeta.reduce((acc, f) => acc + f.size, 0);
         transferredBytes = 0;
         lastTransferredBytes = 0;
+
+        // Pre-flight storage space check (Fix 6)
+        if (navigator.storage && navigator.storage.estimate) {
+          try {
+            const estimate = await navigator.storage.estimate();
+            const available = (estimate.quota ?? 0) - (estimate.usage ?? 0);
+            if (available > 0 && totalBytesToTransfer > available * 0.9) {
+              showToast(`Warning: Incoming payload size exceeds available storage capacity.`);
+            }
+          } catch (storageErr) {
+            console.warn('Storage estimation failed:', storageErr);
+          }
+        }
 
         buildReceiveQueueUI(fileMeta);
         startSpeedTracker(false);
@@ -1401,6 +1925,37 @@ function setupReceiverConnection() {
           });
         }
 
+        // Show download ZIP button if we received more than 1 file (Fix 3)
+        if (receivedFiles.length > 1) {
+          const zipBtn = document.getElementById('btn-download-zip');
+          if (zipBtn) {
+            zipBtn.classList.remove('hidden');
+            zipBtn.onclick = async () => {
+              try {
+                zipBtn.setAttribute('disabled', 'true');
+                zipBtn.textContent = 'Packaging ZIP...';
+                // Package files into a single ZIP
+                const zipFiles = receivedFiles.map(rf => {
+                  const meta = fileMeta.find(m => m.name === rf.name && m.size === rf.size);
+                  return {
+                    name: meta?.path || rf.name,
+                    blob: rf.blob
+                  };
+                });
+                const zipBlob = await createUncompressedZip(zipFiles);
+                triggerLocalDownload(zipBlob, 'filebeam_transfer_' + Date.now() + '.zip');
+                zipBtn.textContent = 'Downloaded ZIP!';
+              } catch (err) {
+                console.error(err);
+                showToast('Failed to create ZIP package.');
+                zipBtn.textContent = 'Download All as ZIP';
+              } finally {
+                zipBtn.removeAttribute('disabled');
+              }
+            };
+          }
+        }
+
         // Save to history
         saveToHistory(receivedFiles.map(f => ({ name: f.name, size: f.size })), 'received');
       }
@@ -1447,7 +2002,7 @@ function buildReceiveQueueUI(metaList: FileMetadata[]) {
 
     const nameEl = document.createElement('p');
     nameEl.className = 'font-bold text-text-primary truncate max-w-[150px]';
-    nameEl.textContent = file.name;
+    nameEl.textContent = file.path || file.name;
 
     const sizeEl = document.createElement('p');
     sizeEl.className = 'text-[9px] text-text-secondary font-semibold';
@@ -1577,8 +2132,20 @@ async function startCamera() {
           let roomCode = code.data.trim();
           if (roomCode.includes('room=')) {
             try {
-              const parsed = new URL(roomCode).searchParams.get('room');
+              const url = new URL(roomCode);
+              const parsed = url.searchParams.get('room');
               if (parsed) roomCode = parsed;
+              
+              // Extract E2E encryption key from URL fragment scanned (Fix 1)
+              const hashMatch = url.hash.match(/key=([A-Za-z0-9_-]+)/);
+              if (hashMatch) {
+                const keyStr = hashMatch[1];
+                importKeyFromBase64(keyStr).then(key => {
+                  transferKey = key;
+                }).catch(err => {
+                  console.warn('Failed to import scanned key:', err);
+                });
+              }
             } catch (urlErr) {
               console.warn('Malformed QR URL scanned:', urlErr);
             }
