@@ -11,7 +11,7 @@ interface FileMetadata {
 }
 
 interface ControlMessage {
-  type: 'meta' | 'start-file' | 'end-file' | 'complete' | 'error';
+  type: 'meta' | 'start-file' | 'end-file' | 'complete' | 'error' | 'ping' | 'pong';
   metadata?: FileMetadata[];
   fileIndex?: number;
   errorMsg?: string;
@@ -30,6 +30,10 @@ let fileMeta: FileMetadata[] = [];
 let currentFileChunks: (ArrayBuffer | Blob)[] = [];
 let receivingIdx = -1;
 let wasCameraActive = false;
+let isConnecting = false;
+let heartbeatInterval: number | null = null;
+let lastHeartbeatTime = 0;
+let speedTicks = 0;
 
 // History typing
 interface HistoryItem {
@@ -138,6 +142,94 @@ function updateConnectionDiagnostics() {
     });
   } catch (err) {
     updateConnectionStatus('connected', 'Connected (P2P)');
+  }
+}
+
+// Dynamically synthesize alert sounds using Web Audio API (Fix 2)
+function playSynthesizedTone(type: 'success' | 'error') {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    if (type === 'success') {
+      const now = ctx.currentTime;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(659.25, now + 0.12); // E5
+      osc.frequency.setValueAtTime(783.99, now + 0.24); // G5
+      osc.frequency.setValueAtTime(1046.50, now + 0.36); // C6
+      
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+      gain.gain.setValueAtTime(0.2, now + 0.45);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+      
+      osc.start(now);
+      osc.stop(now + 0.7);
+    } else {
+      const now = ctx.currentTime;
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, now);
+      osc.frequency.linearRampToValueAtTime(90, now + 0.3);
+      
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.15, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
+      
+      osc.start(now);
+      osc.stop(now + 0.35);
+    }
+  } catch (err) {
+    console.warn('Audio synthesis failed:', err);
+  }
+}
+
+// Trigger haptic vibration on Android devices (Fix 2)
+function triggerHapticFeedback() {
+  if (navigator.vibrate) {
+    try {
+      navigator.vibrate([100, 50, 100]);
+    } catch (_) {}
+  }
+}
+
+// Start WebRTC connection heartbeat check (Fix 10)
+function startHeartbeat(isSender: boolean) {
+  stopHeartbeat();
+  lastHeartbeatTime = Date.now();
+  
+  if (isSender) {
+    heartbeatInterval = setInterval(() => {
+      if (currentConn && currentConn.open) {
+        try {
+          currentConn.send({ type: 'ping' });
+        } catch (_) {}
+      }
+    }, 5000) as unknown as number;
+  } else {
+    heartbeatInterval = setInterval(() => {
+      // Check watchdog timeout (12s limit)
+      if (Date.now() - lastHeartbeatTime > 12000) {
+        console.warn('WebRTC heartbeat lost (silent freeze detected)');
+        showToast('Connection lost (WebRTC link frozen).');
+        resetState();
+        showScreen('s-home');
+      }
+    }, 5000) as unknown as number;
+  }
+}
+
+// Stop WebRTC connection heartbeat check (Fix 10)
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
   }
 }
 
@@ -356,6 +448,8 @@ function resetState() {
   fileMeta = [];
   currentFileChunks = [];
   receivingIdx = -1;
+  isConnecting = false;
+  stopHeartbeat();
   updateConnectionStatus('disconnected');
 }
 
@@ -396,6 +490,60 @@ function setupFileSelectionListeners() {
   btnCreateRoom?.addEventListener('click', () => {
     if (selectedFiles.length > 0) {
       initializeSenderRoom();
+    }
+  });
+
+  // Clear Queue button listener (Fix 8)
+  document.getElementById('btn-clear-queue')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectedFiles = [];
+    updateSelectedFilesUI();
+  });
+
+  // Full-screen drag overlay event listeners (Fix 4)
+  const dragOverlay = document.getElementById('drag-drop-overlay');
+  let dragCounter = 0;
+
+  window.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    const sendFileScreen = document.getElementById('s-send-file');
+    if (sendFileScreen && !sendFileScreen.classList.contains('hidden')) {
+      dragCounter++;
+      if (dragOverlay) {
+        dragOverlay.classList.remove('hidden');
+        dragOverlay.classList.add('flex');
+      }
+    }
+  });
+
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    const sendFileScreen = document.getElementById('s-send-file');
+    if (sendFileScreen && !sendFileScreen.classList.contains('hidden')) {
+      dragCounter--;
+      if (dragCounter === 0 && dragOverlay) {
+        dragOverlay.classList.add('hidden');
+        dragOverlay.classList.remove('flex');
+      }
+    }
+  });
+
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    if (dragOverlay) {
+      dragOverlay.classList.add('hidden');
+      dragOverlay.classList.remove('flex');
+    }
+    const sendFileScreen = document.getElementById('s-send-file');
+    if (sendFileScreen && !sendFileScreen.classList.contains('hidden')) {
+      if (e.dataTransfer?.files) {
+        handleFilesSelected(Array.from(e.dataTransfer.files));
+      }
     }
   });
 }
@@ -597,12 +745,12 @@ function initializeSenderRoom(retryCount: number = 0) {
         }, (err) => {
           if (err) {
             console.error(err);
-            qrContainer.textContent = 'QR failed. Use code above.';
+            qrContainer.innerHTML = `<div class="p-3 text-red-400 text-[10px] font-bold bg-red-950/20 border border-red-500/20 rounded-xl leading-normal">Failed to generate QR Code. Please use the 6-digit room code above.</div>`;
           }
         });
       } catch (err) {
         console.error(err);
-        qrContainer.textContent = 'QR failed. Use code above.';
+        qrContainer.innerHTML = `<div class="p-3 text-red-400 text-[10px] font-bold bg-red-950/20 border border-red-500/20 rounded-xl leading-normal">Failed to generate QR Code. Please use the 6-digit room code above.</div>`;
       }
     }
 
@@ -633,6 +781,12 @@ function initializeSenderRoom(retryCount: number = 0) {
   });
 
   myPeer.on('error', (err: any) => {
+    // Safeguard: if transfer is in progress, ignore signaling errors (Fix 3)
+    if (currentConn && currentConn.open) {
+      console.warn('Signaling server error ignored as WebRTC direct transfer is active:', err);
+      return;
+    }
+
     if (serverTimeoutId) {
       clearTimeout(serverTimeoutId);
       serverTimeoutId = null;
@@ -679,7 +833,12 @@ function setupSenderConnection() {
       monitorPeerConnection(currentConn.peerConnection);
     }
     updateConnectionDiagnostics(); // Show candidate details
+    startHeartbeat(true); // Start sending keep-alive pings (Fix 10)
     startSendingPayload();
+  });
+
+  currentConn.on('data', () => {
+    lastHeartbeatTime = Date.now(); // Track receiver responses
   });
 
   currentConn.on('close', () => {
@@ -757,7 +916,10 @@ async function startSendingPayload() {
 
     // Save to history
     saveToHistory(selectedFiles.map(f => ({ name: f.name, size: f.size })), 'sent');
+    playSynthesizedTone('success');
+    triggerHapticFeedback();
   } catch (err) {
+    playSynthesizedTone('error');
     console.error('Payload transmission aborted:', err);
     showToast('File transfer aborted due to a connection error.');
     setProgressBarColor('error', true);
@@ -902,19 +1064,25 @@ function startSpeedTracker(isSending: boolean) {
 
   if (speedInterval) clearInterval(speedInterval);
   smoothSpeed = 0;
+  speedTicks = 0; // Reset ticks (Fix 6)
 
   speedInterval = setInterval(() => {
+    speedTicks++;
     const bytesThisSecond = transferredBytes - lastTransferredBytes;
     lastTransferredBytes = transferredBytes;
 
     // Smoothed Exponential Moving Average speed
-    smoothSpeed = smoothSpeed === 0 ? bytesThisSecond : smoothSpeed * 0.7 + bytesThisSecond * 0.3;
+    smoothSpeed = smoothSpeed === 0 ? bytesThisSecond : smoothSpeed * 0.6 + bytesThisSecond * 0.4;
 
     if (speedEl) {
-      speedEl.textContent = `${formatBytes(smoothSpeed)}/s`;
+      if (speedTicks <= 2) {
+        speedEl.textContent = 'Calculating...';
+      } else {
+        speedEl.textContent = `${formatBytes(smoothSpeed)}/s`;
+      }
     }
 
-    if (etaEl && smoothSpeed > 100) {
+    if (etaEl && smoothSpeed > 100 && speedTicks > 2) {
       const remainingBytes = totalBytesToTransfer - transferredBytes;
       const secondsLeft = Math.ceil(remainingBytes / smoothSpeed);
       const minutes = Math.floor(secondsLeft / 60);
@@ -1054,7 +1222,10 @@ function setupCodeInputListeners() {
 
 // Connect to the sender peer room
 function connectToSender(code: string) {
+  if (isConnecting) return;
+  isConnecting = true;
   resetState(); // Clear peer and timeouts first
+  isConnecting = true; // Set back to true since resetState cleared it
   updateConnectionStatus('connecting', 'Locating Sender...');
   
   // UI: spinner inside submit button
@@ -1096,6 +1267,12 @@ function connectToSender(code: string) {
   });
 
   myPeer.on('error', (err) => {
+    // Safeguard: if transfer is in progress, ignore signaling errors (Fix 3)
+    if (currentConn && currentConn.open) {
+      console.warn('Signaling server error ignored as WebRTC direct transfer is active:', err);
+      return;
+    }
+
     if (connectionTimeoutId) {
       clearTimeout(connectionTimeoutId);
       connectionTimeoutId = null;
@@ -1121,10 +1298,12 @@ function setupReceiverConnection() {
     }
     updateConnectionDiagnostics(); // Show candidate details
     setProgressBarColor('accent', false); // Reset to accent
+    startHeartbeat(false); // Start keep-alive receiver watchdog (Fix 10)
     showScreen('s-recv-xfer');
   });
 
   currentConn.on('data', (data: unknown) => {
+    lastHeartbeatTime = Date.now(); // Track any incoming data as active heartbeat
     // Handle incoming data slices and control signals
     if (data instanceof ArrayBuffer || data instanceof Blob) {
       // Chunk payload data
@@ -1135,6 +1314,12 @@ function setupReceiverConnection() {
     } else {
       // Control messages (JSON strings/objects)
       const msg = data as ControlMessage;
+      if (msg.type === 'ping') {
+        try {
+          currentConn?.send({ type: 'pong' });
+        } catch (_) {}
+        return;
+      }
       if (msg.type === 'meta' && msg.metadata) {
         requestWakeLock();
         fileMeta = msg.metadata;
@@ -1174,6 +1359,7 @@ function setupReceiverConnection() {
         // Auto trigger download for government level UX
         triggerLocalDownload(blob, meta.name);
       } else if (msg.type === 'error') {
+        playSynthesizedTone('error');
         showToast(msg.errorMsg || 'Transfer error occurred on sender side.');
         setProgressBarColor('error', false);
         const titleEl = document.getElementById('recv-status-title');
@@ -1201,6 +1387,8 @@ function setupReceiverConnection() {
         const titleEl = document.getElementById('recv-status-title');
         if (titleEl) titleEl.textContent = 'Payload Received!';
         setProgressBarColor('success', false);
+        playSynthesizedTone('success');
+        triggerHapticFeedback();
 
         // Hide cancel and show done button
         document.getElementById('btn-cancel-recv')?.classList.add('hidden');
@@ -1228,6 +1416,7 @@ function setupReceiverConnection() {
 
   currentConn.on('error', (err) => {
     console.error('Connection error:', err);
+    playSynthesizedTone('error');
     resetState();
     showScreen('s-home');
   });
@@ -1387,8 +1576,12 @@ async function startCamera() {
           // Parse code (check if complete url or just digit code)
           let roomCode = code.data.trim();
           if (roomCode.includes('room=')) {
-            const parsed = new URL(roomCode).searchParams.get('room');
-            if (parsed) roomCode = parsed;
+            try {
+              const parsed = new URL(roomCode).searchParams.get('room');
+              if (parsed) roomCode = parsed;
+            } catch (urlErr) {
+              console.warn('Malformed QR URL scanned:', urlErr);
+            }
           }
           
           if (/^\d{6}$/.test(roomCode)) {
@@ -1456,6 +1649,18 @@ function saveToHistory(files: { name: string; size: number }[], direction: 'sent
   }
 }
 
+// Format timestamp relatively (Fix 5)
+function getRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const mins = Math.floor(diff / 60000);
+  if (diff < 10000 || mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 function loadHistoryUI() {
   const container = document.getElementById('recent-transfers-container');
   const card = document.getElementById('recent-transfers-card');
@@ -1502,12 +1707,22 @@ function loadHistoryUI() {
       fileInfo.appendChild(dirBadge);
       fileInfo.appendChild(nameEl);
 
+      const sizeTimeWrapper = document.createElement('div');
+      sizeTimeWrapper.className = 'flex flex-col items-end flex-shrink-0';
+
       const sizeEl = document.createElement('span');
       sizeEl.className = 'font-mono text-slate-500';
       sizeEl.textContent = formatBytes(item.size);
 
+      const timeEl = document.createElement('span');
+      timeEl.className = 'text-[8px] text-slate-600 font-semibold';
+      timeEl.textContent = getRelativeTime(item.timestamp);
+
+      sizeTimeWrapper.appendChild(sizeEl);
+      sizeTimeWrapper.appendChild(timeEl);
+
       row.appendChild(fileInfo);
-      row.appendChild(sizeEl);
+      row.appendChild(sizeTimeWrapper);
       container.appendChild(row);
     });
   } catch (err) {
