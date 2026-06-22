@@ -33,8 +33,8 @@
   <link rel="icon" href="./assets/favicon-w9nYSJGx.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/icon-192-amJ48zCo.png">
   <link rel="sitemap" type="application/xml" title="Sitemap" href="data:text/xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHVybHNldCB4bWxucz0iaHR0cDovL3d3dy5zaXRlbWFwcy5vcmcvc2NoZW1hcy9zaXRlbWFwLzAuOSI+CiAgPHVybD4KICAgIDxsb2M+aHR0cHM6Ly9keWxhbmdyb3cuZ2l0aHViLmlvL211dGxpLUZpbGUvPC9sb2M+CiAgICA8bGFzdG1vZD4yMDI2LTA2LTEwPC9sYXN0bW9kPgogICAgPGNoYW5nZWZyZXE+bW9udGhseTwvY2hhbmdlZnJlcT4KICAgIDxwcmlvcml0eT4xLjA8L3ByaW9yaXR5PgogIDwvdXJsPgo8L3VybHNldD4K">
-  <script type="module" crossorigin src="./assets/index-DKwK9xCT.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CcQNCxON.css">
+  <script type="module" crossorigin src="./assets/index-CVhAidd7.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BFfhozwM.css">
 <link rel="manifest" href="./manifest.webmanifest"><script id="vite-plugin-pwa:inline-sw">if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('./sw.js', { scope: './' })})}</script></head>
 <body class="min-h-screen flex flex-col items-center justify-between py-6 px-4 bg-bg text-text-primary antialiased">
   
@@ -168,7 +168,10 @@
       <!-- File List -->
       <div class="glass-panel rounded-2xl p-4 hidden flex-col gap-3" id="file-list-card">
         <div class="flex justify-between items-center border-b border-border pb-2.5">
-          <span class="text-xs font-extrabold text-text-secondary uppercase">Selected Files</span>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-extrabold text-text-secondary uppercase">Selected Files</span>
+            <button id="btn-clear-queue" class="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase transition cursor-pointer">Clear Queue</button>
+          </div>
           <span class="text-xs text-accent font-bold" id="total-selected-size">0 B</span>
         </div>
         <div class="max-h-48 overflow-y-auto flex flex-col gap-2.5 pr-1" id="file-list-container">
@@ -431,6 +434,19 @@
       FileBeam uses end-to-end encrypted WebRTC channels (DTLS-SRTP). No data leaves your network or touch servers. Reworked to meet federal guidelines for offline transmission capability.
     </p>
   </footer>
+
+  <!-- Full-Screen Drag & Drop Overlay (Fix 4) -->
+  <div id="drag-drop-overlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center bg-bg/95 backdrop-blur-md border-4 border-dashed border-accent m-4 rounded-3xl pointer-events-none transition-all duration-300">
+    <div class="w-20 h-20 rounded-3xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent mb-4 animate-bounce">
+      <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    </div>
+    <p class="text-lg font-black tracking-tight text-white uppercase mb-1">Drop Files to Share</p>
+    <p class="text-xs text-text-secondary">Release files anywhere to queue them</p>
+  </div>
 
 </body>
 </html>
