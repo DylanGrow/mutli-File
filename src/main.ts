@@ -367,7 +367,7 @@ let currentConn: DataConnection | null = null;
 let selectedFiles: ExtendedFile[] = [];
 let receivedFiles: { name: string; blob: Blob; size: number; fileIndex: number }[] = [];
 let transferKey: CryptoKey | null = null; // AES key for end-to-end encryption (Fix 1)
-let isDynamicChunkTuningEnabled = true; // Dynamic chunk size (Fix 5)
+let isDynamicChunkTuningEnabled = safeStorageGet('fb_dynamic_chunk_tuning') !== 'false'; // Dynamic chunk size (Fix 5)
 let connectionTimeoutId: number | null = null; // Connection timeout tracker
 let serverTimeoutId: number | null = null; // Server timeout tracker
 let wakeLock: any = null; // Screen WakeLock reference
@@ -813,8 +813,12 @@ function setupHomeListeners() {
     loadHistoryUI();
   });
 
-  // Settings gear button click listener (Fix 2)
+  // Settings gear button click listener (Fix 2, 7)
   document.getElementById('btn-settings-toggle')?.addEventListener('click', () => {
+    if (currentConn && currentConn.open) {
+      showToast('Settings cannot be accessed during an active transfer.');
+      return;
+    }
     showScreen('s-settings');
     const iceJsonEl = document.getElementById('settings-ice-json') as HTMLTextAreaElement;
     const chunkTuneEl = document.getElementById('settings-chk-chunk-tune') as HTMLInputElement;
@@ -838,7 +842,7 @@ function setupHomeListeners() {
     });
   });
 
-  // Save settings button click listener (Fix 2)
+  // Save settings button click listener (Fix 2, 6)
   document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     const iceJsonEl = document.getElementById('settings-ice-json') as HTMLTextAreaElement;
     const chunkTuneEl = document.getElementById('settings-chk-chunk-tune') as HTMLInputElement;
@@ -862,6 +866,7 @@ function setupHomeListeners() {
     }
     if (chunkTuneEl) {
       isDynamicChunkTuningEnabled = chunkTuneEl.checked;
+      safeStorageSet('fb_dynamic_chunk_tuning', String(isDynamicChunkTuningEnabled));
     }
     const speedLimitEl = document.getElementById('settings-speed-limit') as HTMLSelectElement;
     if (speedLimitEl) {
@@ -924,6 +929,14 @@ function resetState() {
   document.getElementById('btn-download-zip')?.classList.add('hidden'); // Hide ZIP button on reset (Fix 3)
   stopHeartbeat();
   
+  // Hide and clear clipboard copy fallback input (Fix 2)
+  const fallbackInput = document.getElementById('input-copy-fallback') as HTMLInputElement;
+  if (fallbackInput) {
+    fallbackInput.value = '';
+    fallbackInput.classList.add('hidden');
+    fallbackInput.classList.remove('visible');
+  }
+  
   // Revoke image preview object URLs (Fix 6)
   previewObjectUrls.forEach((url) => {
     try { URL.revokeObjectURL(url); } catch (_) {}
@@ -967,15 +980,19 @@ function setupFileSelectionListeners() {
 
   dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropZone.classList.add('border-accent', 'bg-accent/5');
   });
 
-  dropZone.addEventListener('dragleave', () => {
+  dropZone.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     dropZone.classList.remove('border-accent', 'bg-accent/5');
   });
 
   dropZone.addEventListener('drop', async (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropZone.classList.remove('border-accent', 'bg-accent/5');
     if (e.dataTransfer?.items) {
       const filePromises: Promise<ExtendedFile[]>[] = [];
@@ -1231,14 +1248,16 @@ function copyTextToClipboard(text: string): Promise<boolean> {
 }
 
 // Generate Room Code and initialize PeerJS room (Fix 1, 4, 9)
-async function initializeSenderRoom(retryCount: number = 0) {
+async function initializeSenderRoom(retryCount: number = 0, existingCode?: string) {
   if (retryCount === 0) {
     diagnosticsLog = [];
     logDiagnostic('Initializing sender room creation...', 'info');
   }
   
+  const savedKey = transferKey; // backup key (Fix 3)
   resetState(); // Clean up previous connections and timeouts
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  
+  const code = existingCode || Math.floor(100000 + Math.random() * 900000).toString();
   const displayEl = document.getElementById('room-code-display');
   if (displayEl) {
     displayEl.textContent = `${code.slice(0, 3)} ${code.slice(3)}`;
@@ -1246,17 +1265,21 @@ async function initializeSenderRoom(retryCount: number = 0) {
 
   updateConnectionStatus('connecting', 'Creating Room...');
   
-  // Generate random AES key for end-to-end encryption (Fix 1)
-  try {
-    transferKey = await generateEncryptionKey();
-    logDiagnostic('E2E Encryption key generated.', 'success');
-  } catch (err) {
-    console.error('Failed to generate encryption key:', err);
-    logDiagnostic('Failed to generate E2E encryption key.', 'error');
-    showToast('Encryption setup failed.');
-    resetState();
-    showScreen('s-home');
-    return;
+  if (existingCode && savedKey) {
+    transferKey = savedKey;
+  } else {
+    // Generate random AES key for end-to-end encryption (Fix 1)
+    try {
+      transferKey = await generateEncryptionKey();
+      logDiagnostic('E2E Encryption key generated.', 'success');
+    } catch (err) {
+      console.error('Failed to generate encryption key:', err);
+      logDiagnostic('Failed to generate E2E encryption key.', 'error');
+      showToast('Encryption setup failed.');
+      resetState();
+      showScreen('s-home');
+      return;
+    }
   }
 
   // Custom prefix to prevent ID collision in PeerJS public cloud
@@ -1387,7 +1410,7 @@ async function initializeSenderRoom(retryCount: number = 0) {
         myPeer = null;
       }
       setTimeout(() => {
-        initializeSenderRoom(retryCount + 1);
+        initializeSenderRoom(retryCount + 1, err.type === 'unavailable-id' ? undefined : code);
       }, delay);
       return;
     }
@@ -1749,9 +1772,14 @@ function startSpeedTracker(isSending: boolean) {
       const remainingBytes = Math.max(0, totalBytesToTransfer - transferredBytes);
       const secondsLeft = Math.ceil(remainingBytes / smoothSpeed);
       if (isFinite(secondsLeft) && secondsLeft >= 0 && secondsLeft < 99 * 3600) {
-        const minutes = Math.floor(secondsLeft / 60);
+        const hours = Math.floor(secondsLeft / 3600);
+        const minutes = Math.floor((secondsLeft % 3600) / 60);
         const seconds = secondsLeft % 60;
-        etaEl.textContent = `ETA: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        if (hours > 0) {
+          etaEl.textContent = `ETA: ${hours}h ${minutes}m ${seconds}s`;
+        } else {
+          etaEl.textContent = `ETA: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        }
       } else {
         etaEl.textContent = 'ETA: --:--';
       }
@@ -1949,7 +1977,7 @@ async function connectToSender(code: string) {
       showToast('Connection timed out. Ensure both devices are on the same network.');
       document.getElementById('diagnostics-card-receiver')?.classList.remove('hidden');
       resetState();
-      showScreen('s-home');
+      showScreen('s-recv-offer'); // Keep on s-recv-offer (Fix 4)
     }
   }, 15000) as unknown as number;
 
@@ -1987,7 +2015,7 @@ async function connectToSender(code: string) {
     showToast('Connecting failed. Ensure you are on the same network.');
     document.getElementById('diagnostics-card-receiver')?.classList.remove('hidden');
     resetState();
-    showScreen('s-home');
+    showScreen('s-recv-offer'); // Keep on s-recv-offer (Fix 4)
   });
 }
 
@@ -2052,7 +2080,22 @@ function setupReceiverConnection() {
       }
       if (msg.type === 'meta' && msg.metadata) {
         requestWakeLock();
-        fileMeta = msg.metadata;
+        // Sanitize incoming metadata paths/names to prevent Zip Slip / directory traversal (Fix 1)
+        fileMeta = msg.metadata.map(m => {
+          let sanitizedPath = m.path;
+          if (sanitizedPath) {
+            sanitizedPath = sanitizedPath.replace(/\\/g, '/');
+            const segments = sanitizedPath.split('/').filter(seg => seg !== '' && seg !== '..');
+            sanitizedPath = segments.join('/');
+          }
+          let sanitizedName = m.name;
+          sanitizedName = sanitizedName.replace(/[\\/]/g, '_');
+          return {
+            ...m,
+            path: sanitizedPath || undefined,
+            name: sanitizedName
+          };
+        });
         totalBytesToTransfer = fileMeta.reduce((acc, f) => acc + f.size, 0);
         transferredBytes = 0;
         lastTransferredBytes = 0;
@@ -2353,6 +2396,15 @@ async function startCamera() {
     }
   }
 
+  // Guard mediaDevices availability (Fix 10)
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showToast('Camera access is not supported in this browser or context (requires HTTPS).');
+    stopCamera();
+    const camBox = document.getElementById('camera-scan-container');
+    if (camBox) camBox.classList.add('hidden');
+    return;
+  }
+
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: { 
@@ -2520,7 +2572,7 @@ function loadHistoryUI() {
 
     list.forEach(item => {
       const row = document.createElement('div');
-      row.className = 'flex items-center justify-between p-2 rounded-lg bg-slate-950/40 border border-border/60 text-[11px] text-text-secondary';
+      row.className = 'flex items-center justify-between p-2 rounded-lg bg-surface border border-border/60 text-[11px] text-text-secondary';
 
       const fileInfo = document.createElement('div');
       fileInfo.className = 'flex items-center gap-2 min-w-0';
@@ -2561,7 +2613,7 @@ function loadHistoryUI() {
   }
 }
 
-// Stop camera and release media tracks
+// Stop camera and release media tracks (Fix 10)
 function stopCamera() {
   if (cameraTimer) {
     clearInterval(cameraTimer);
@@ -2570,6 +2622,10 @@ function stopCamera() {
   if (cameraStream) {
     cameraStream.getTracks().forEach((track) => track.stop());
     cameraStream = null;
+  }
+  const video = document.getElementById('scan-camera-el') as HTMLVideoElement;
+  if (video) {
+    video.srcObject = null;
   }
 }
 
