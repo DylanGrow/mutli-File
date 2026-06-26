@@ -1,15 +1,15 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background-color: #08080f;">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0a0a0f">
+  <meta name="theme-color" content="#08080f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="FileBeam">
   
   <!-- Security Headers (Implemented client-side where possible, CSP ready) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:; camera-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:; camera-src 'self';">
 
   <!-- SEO Meta Tags -->
   <title>FileBeam - Secure Peer-to-Peer File Transfer</title>
@@ -33,16 +33,16 @@
   <link rel="icon" href="./assets/favicon-w9nYSJGx.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/icon-192-amJ48zCo.png">
   <link rel="sitemap" type="application/xml" title="Sitemap" href="data:text/xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHVybHNldCB4bWxucz0iaHR0cDovL3d3dy5zaXRlbWFwcy5vcmcvc2NoZW1hcy9zaXRlbWFwLzAuOSI+CiAgPHVybD4KICAgIDxsb2M+aHR0cHM6Ly9keWxhbmdyb3cuZ2l0aHViLmlvL211dGxpLUZpbGUvPC9sb2M+CiAgICA8bGFzdG1vZD4yMDI2LTA2LTEwPC9sYXN0bW9kPgogICAgPGNoYW5nZWZyZXE+bW9udGhseTwvY2hhbmdlZnJlcT4KICAgIDxwcmlvcml0eT4xLjA8L3ByaW9yaXR5PgogIDwvdXJsPgo8L3VybHNldD4K">
-  <script type="module" crossorigin src="./assets/index-cPUdB_yk.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-ChyYfDZe.css">
+  <script type="module" crossorigin src="./assets/index-D4bNGGlv.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B5ghsNyH.css">
 <link rel="manifest" href="./manifest.webmanifest"></head>
-<body class="min-h-screen flex flex-col items-center justify-between py-6 px-4 bg-bg text-text-primary antialiased">
+<body class="min-h-screen flex flex-col items-center justify-between py-6 px-4 bg-bg text-text-primary antialiased" style="background-color: #08080f;">
   
   <!-- Background animation elements -->
   <div class="mesh-bg" aria-hidden="true"></div>
 
   <!-- Custom Toast Notification Banner -->
-  <div id="toast-banner" class="hidden fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-xs p-4 rounded-xl glass-panel border-red-500/20 bg-red-950/20 text-red-200 text-xs font-bold items-center gap-3 shadow-xl shadow-black/40" role="alert">
+  <div id="toast-banner" class="hidden fixed top-6 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-xs p-4 rounded-2xl glass-panel border-red-500/20 bg-red-950/20 text-red-200 text-xs font-bold items-center gap-3 shadow-2xl shadow-black/50" role="alert">
     <svg class="w-4 h-4 text-red-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
     <span id="toast-message" class="flex-1">An error occurred.</span>
     <button id="btn-close-toast" class="text-text-secondary hover:text-white p-0.5 transition cursor-pointer" aria-label="Close notification">
@@ -53,7 +53,7 @@
   <!-- Header -->
   <header class="w-full max-w-md flex justify-between items-center mb-6">
     <div class="flex items-center gap-3 cursor-pointer" id="header-logo">
-      <div class="w-10 h-10 rounded-xl bg-accent/20 border border-accent/40 flex items-center justify-center text-accent shadow-lg shadow-accent/10">
+      <div class="w-10 h-10 rounded-xl bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shadow-lg shadow-accent/10">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
         </svg>
@@ -65,17 +65,17 @@
     </div>
     
     <div class="flex items-center gap-2">
-      <!-- Settings Button (Fix 2) -->
-      <button id="btn-settings-toggle" class="w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Open Settings">
-        <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Settings Button -->
+      <button id="btn-settings-toggle" class="btn-icon" aria-label="Open Settings">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
       </button>
 
       <!-- Connection Status Badge -->
-      <div id="conn-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-border text-xs font-semibold text-text-secondary">
-        <span class="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" id="conn-dot"></span>
+      <div id="conn-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-border text-[11px] font-semibold text-text-secondary">
+        <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse" id="conn-dot"></span>
         <span id="conn-status-text">Disconnected</span>
       </div>
     </div>
@@ -86,17 +86,20 @@
 
     <!-- SCREEN: Home -->
     <section id="s-home" class="screen active flex flex-col gap-6" aria-labelledby="home-heading">
-      <div class="text-center py-6">
-        <h1 id="home-heading" class="text-3xl font-extrabold tracking-tight mb-2 sm:text-4xl bg-gradient-to-br from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
-          Any Device. Direct Share.
+      <div class="text-center py-8">
+        <div class="flex justify-center mb-4">
+          <span class="hero-badge"><span class="dot"></span>End-to-End Encrypted</span>
+        </div>
+        <h1 id="home-heading" class="text-3xl font-extrabold tracking-tight mb-3 sm:text-4xl bg-gradient-to-br from-white via-slate-100 to-slate-400 bg-clip-text text-transparent leading-tight">
+          Any Device.<br>Direct Share.
         </h1>
-        <p class="text-sm text-text-secondary leading-relaxed max-w-xs mx-auto">
+        <p class="text-sm text-text-secondary leading-relaxed max-w-[280px] mx-auto">
           Send files between Windows, iOS, and Android. Truly secure peer-to-peer transfer.
         </p>
       </div>
 
-      <div class="flex flex-col gap-3.5">
-        <button id="btn-send-init" class="w-full py-4 px-6 rounded-2xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-3 shadow-lg shadow-accent/20 active:scale-[0.98] transition cursor-pointer">
+      <div class="flex flex-col gap-3">
+        <button id="btn-send-init" class="btn-primary">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="17 8 12 3 7 8"/>
@@ -104,7 +107,7 @@
           </svg>
           Send Files
         </button>
-        <button id="btn-recv-init" class="w-full py-4 px-6 rounded-2xl bg-surface hover:bg-white/5 border border-border text-text-primary font-bold flex items-center justify-center gap-3 active:scale-[0.98] transition cursor-pointer">
+        <button id="btn-recv-init" class="btn-secondary">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
@@ -115,32 +118,32 @@
       </div>
 
       <!-- Instruction list -->
-      <article class="glass-panel rounded-2xl p-5 mt-2 flex flex-col gap-4">
-        <h2 class="text-xs font-black tracking-widest text-text-secondary uppercase">How It Works</h2>
-        <ol class="flex flex-col gap-3 text-xs text-text-secondary">
-          <li class="flex gap-3">
-            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">1</span>
-            <span class="leading-relaxed">Connect both devices to the <strong>same network</strong> (WiFi or Hotspot).</span>
+      <article class="glass-panel rounded-2xl p-5 mt-1 flex flex-col gap-4">
+        <h2 class="text-[11px] font-black tracking-widest text-text-secondary uppercase">How It Works</h2>
+        <ol class="flex flex-col gap-3.5 text-[13px] text-text-secondary">
+          <li class="flex gap-3 items-start">
+            <span class="step-badge">1</span>
+            <span class="leading-relaxed">Connect both devices to the <strong class="text-text-primary">same network</strong> (WiFi or Hotspot).</span>
           </li>
-          <li class="flex gap-3">
-            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">2</span>
-            <span class="leading-relaxed">One device drops a file and gets a <strong>6-digit room code</strong>.</span>
+          <li class="flex gap-3 items-start">
+            <span class="step-badge">2</span>
+            <span class="leading-relaxed">One device drops a file and gets a <strong class="text-text-primary">6-digit room code</strong>.</span>
           </li>
-          <li class="flex gap-3">
-            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">3</span>
+          <li class="flex gap-3 items-start">
+            <span class="step-badge">3</span>
             <span class="leading-relaxed">The other device enters the code (or scans the QR) to link.</span>
           </li>
-          <li class="flex gap-3">
-            <span class="flex-shrink-0 w-5 h-5 rounded bg-accent/10 border border-accent/20 text-accent font-bold flex items-center justify-center">4</span>
-            <span class="leading-relaxed">Files transfer <strong>direct peer-to-peer</strong> (fully encrypted, local speed).</span>
+          <li class="flex gap-3 items-start">
+            <span class="step-badge">4</span>
+            <span class="leading-relaxed">Files transfer <strong class="text-text-primary">direct peer-to-peer</strong> — fully encrypted, local speed.</span>
           </li>
         </ol>
       </article>
 
       <!-- Recent Transfers History (Local Storage) -->
-      <article class="glass-panel rounded-2xl p-5 mt-2 hidden flex-col gap-3" id="recent-transfers-card">
-        <div class="flex justify-between items-center border-b border-border pb-2">
-          <h2 class="text-xs font-black tracking-widest text-text-secondary uppercase">Recent Transfers</h2>
+      <article class="glass-panel rounded-2xl p-5 mt-1 hidden flex-col gap-3" id="recent-transfers-card">
+        <div class="flex justify-between items-center border-b border-border pb-2.5">
+          <h2 class="text-[11px] font-black tracking-widest text-text-secondary uppercase">Recent Transfers</h2>
           <button id="btn-clear-history" class="text-[10px] text-red-400 font-bold hover:text-red-300 transition cursor-pointer">Clear</button>
         </div>
         <div class="flex flex-col gap-2 max-h-36 overflow-y-auto" id="recent-transfers-container">
@@ -149,30 +152,45 @@
       </article>
     </section>
 
-    <!-- SCREEN: Settings (Fix 2) -->
+    <!-- SCREEN: Settings -->
     <section id="s-settings" class="screen hidden flex flex-col gap-5" aria-labelledby="settings-heading">
       <div class="flex items-center gap-3">
-        <button class="btn-back-settings w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
-          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <button class="btn-back-settings btn-icon" aria-label="Go back">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Advanced Settings</span>
+        <span class="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Advanced Settings</span>
       </div>
 
-      <h2 id="settings-heading" class="text-xl font-bold tracking-tight">Advanced Configurations</h2>
+      <h2 id="settings-heading" class="text-xl font-bold tracking-tight">Configurations</h2>
       
       <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
         <div>
-          <label class="block text-xs font-bold text-text-secondary uppercase mb-2">Custom STUN/TURN Configurations (JSON)</label>
-          <textarea id="settings-ice-json" rows="6" class="w-full bg-slate-950 border border-border rounded-xl p-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent transition" placeholder='[&#10;  { "urls": "stun:stun.l.google.com:19302" }&#10;]'></textarea>
-          <span class="block text-[9px] text-text-secondary mt-1.5 leading-normal">Enter custom ICE configuration as a JSON array of RTCIceServer objects. Leave blank to use defaults.</span>
+          <label class="block text-[11px] font-bold text-text-secondary uppercase mb-2">Custom STUN/TURN (JSON)</label>
+          <textarea id="settings-ice-json" rows="5" class="w-full bg-slate-950/80 border border-border rounded-xl p-3 text-xs font-mono text-text-primary focus:outline-none focus:border-accent transition" placeholder='[&#10;  { "urls": "stun:stun.l.google.com:19302" }&#10;]'></textarea>
+          <span class="block text-[9px] text-text-secondary mt-1.5 leading-normal">Enter custom ICE configuration as a JSON array. Leave blank to use defaults.</span>
+        </div>
+
+        <!-- Transfer Speed Limit Selector -->
+        <div class="flex items-center justify-between border-t border-border pt-4">
+          <div>
+            <label class="block text-[13px] font-bold text-text-primary" for="settings-speed-limit">Speed Limit</label>
+            <span class="block text-[9px] text-text-secondary">Cap outgoing transfer bandwidth.</span>
+          </div>
+          <select id="settings-speed-limit" class="bg-slate-950/80 border border-border rounded-lg px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:border-accent transition cursor-pointer">
+            <option value="0">Unlimited</option>
+            <option value="10">10 MB/s</option>
+            <option value="5">5 MB/s</option>
+            <option value="2">2 MB/s</option>
+            <option value="1">1 MB/s</option>
+          </select>
         </div>
 
         <div class="flex items-center justify-between border-t border-border pt-4">
           <div>
-            <label class="block text-xs font-bold text-text-primary">Dynamic Chunk Tuning</label>
-            <span class="block text-[9px] text-text-secondary">Adapt WebRTC chunk sizing based on throughput speed.</span>
+            <label class="block text-[13px] font-bold text-text-primary">Dynamic Chunk Tuning</label>
+            <span class="block text-[9px] text-text-secondary">Adapt WebRTC chunk sizing for speed.</span>
           </div>
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" id="settings-chk-chunk-tune" class="sr-only peer" checked>
@@ -180,7 +198,7 @@
           </label>
         </div>
         
-        <button id="btn-save-settings" class="w-full py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-2.5 active:scale-[0.98] transition cursor-pointer">
+        <button id="btn-save-settings" class="btn-primary mt-1">
           Save Settings
         </button>
       </div>
@@ -189,44 +207,45 @@
     <!-- SCREEN: Send - File Selection -->
     <section id="s-send-file" class="screen hidden flex flex-col gap-5" aria-labelledby="send-file-heading">
       <div class="flex items-center gap-3">
-        <button class="btn-back w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
-          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <button class="btn-back btn-icon" aria-label="Go back">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Step 1 — Choose Files</span>
+        <span class="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Step 1 — Choose Files</span>
       </div>
 
-      <h2 id="send-file-heading" class="text-xl font-bold tracking-tight">Select your transfer payloads</h2>
+      <h2 id="send-file-heading" class="text-xl font-bold tracking-tight">Select your files</h2>
 
       <!-- Drag & Drop Zone -->
-      <div class="border-2 border-dashed border-border hover:border-accent/60 bg-surface/50 rounded-2xl p-8 text-center cursor-pointer active:scale-[0.99] transition" id="file-drop-zone">
+      <div class="drop-zone" id="file-drop-zone">
         <input type="file" id="file-input-el" class="hidden" multiple>
         <input type="file" id="folder-input-el" class="hidden" webkitdirectory directory multiple>
-        <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-border flex items-center justify-center mx-auto mb-4">
-          <svg class="w-6 h-6 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
+        <div class="drop-zone-icon">
+          <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
         </div>
         <p class="text-sm font-bold text-text-primary mb-1">Click or drag files here</p>
-        <p class="text-xs text-text-secondary">Any file type, no size limit</p>
-        <p class="text-xs text-text-secondary mt-2">or <span id="btn-select-folder" class="text-accent underline cursor-pointer hover:text-accent-hover font-semibold">select a folder</span></p>
+        <p class="text-xs text-text-secondary">Any file type · no size limit</p>
+        <p class="text-xs text-text-secondary mt-2.5">or <span id="btn-select-folder" class="text-accent underline cursor-pointer hover:text-accent-hover font-semibold" style="pointer-events: auto;">select a folder</span></p>
       </div>
 
       <!-- File List -->
       <div class="glass-panel rounded-2xl p-4 hidden flex-col gap-3" id="file-list-card">
         <div class="flex justify-between items-center border-b border-border pb-2.5">
           <div class="flex items-center gap-3">
-            <span class="text-xs font-extrabold text-text-secondary uppercase">Selected Files</span>
-            <button id="btn-clear-queue" class="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase transition cursor-pointer">Clear Queue</button>
+            <span class="text-[11px] font-extrabold text-text-secondary uppercase">Selected Files</span>
+            <button id="btn-clear-queue" class="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase transition cursor-pointer">Clear</button>
           </div>
-          <span class="text-xs text-accent font-bold" id="total-selected-size">0 B</span>
+          <span class="text-xs text-accent font-bold font-mono" id="total-selected-size">0 B</span>
         </div>
-        <div class="max-h-48 overflow-y-auto flex flex-col gap-2.5 pr-1" id="file-list-container">
+        <div class="max-h-48 overflow-y-auto flex flex-col gap-2 pr-1" id="file-list-container">
           <!-- Dynamic File items go here -->
         </div>
-        <button id="btn-create-room" class="w-full mt-2 py-3 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white font-bold flex items-center justify-center gap-2.5 active:scale-[0.98] transition cursor-pointer">
+        <button id="btn-create-room" class="btn-primary mt-1">
           <span>Generate Room Code</span>
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"/>
@@ -239,39 +258,42 @@
     <!-- SCREEN: Send - Share Room Code -->
     <section id="s-send-offer" class="screen hidden flex flex-col gap-5" aria-labelledby="send-offer-heading">
       <div class="flex items-center gap-3">
-        <button class="btn-back w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
-          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <button class="btn-back btn-icon" aria-label="Go back">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Step 2 — Connect Receiver</span>
+        <span class="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Step 2 — Connect Receiver</span>
       </div>
 
       <h2 id="send-offer-heading" class="text-xl font-bold tracking-tight">Share Connection Info</h2>
 
       <!-- Room Code Card -->
       <div class="glass-panel rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-4">
-        <span class="text-xs font-bold text-text-secondary uppercase tracking-widest">Your 6-Digit Room Code</span>
+        <span class="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Your Room Code</span>
         
         <!-- Large Room Code Display -->
-        <div class="flex gap-2 justify-center my-1">
-          <span class="text-4xl sm:text-5xl font-black tracking-widest font-mono text-accent" id="room-code-display">------</span>
+        <div class="flex gap-1.5 justify-center my-1">
+          <span class="room-code-char" id="room-code-display">------</span>
         </div>
 
-        <button id="btn-copy-code" class="px-4 py-2 rounded-lg bg-surface hover:bg-white/5 border border-border text-xs text-text-secondary font-bold flex items-center gap-2 active:scale-[0.97] transition cursor-pointer">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-          Copy Room Info
-        </button>
+        <div class="flex flex-col items-center gap-2.5 w-full">
+          <button id="btn-copy-code" class="px-5 py-2.5 rounded-xl bg-surface hover:bg-white/5 border border-border text-xs text-text-secondary font-bold flex items-center gap-2 active:scale-[0.97] transition cursor-pointer">
+            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+            Copy Room Info
+          </button>
+          <input id="input-copy-fallback" type="text" class="hidden w-full max-w-xs bg-slate-950/60 border border-border text-center text-xs font-mono py-2 px-3 rounded-xl focus:outline-none focus:border-accent" readonly>
+        </div>
       </div>
 
       <!-- QR Code Option -->
       <div class="glass-panel rounded-2xl p-5 flex flex-col items-center justify-center gap-3">
-        <span class="text-xs font-extrabold text-text-secondary uppercase tracking-wider">Or Scan QR Code</span>
+        <span class="text-[10px] font-extrabold text-text-secondary uppercase tracking-wider">Or Scan QR Code</span>
         <div class="w-44 h-44 bg-white p-2 rounded-xl flex items-center justify-center shadow-inner" id="send-qr-container">
-          <!-- Localy generated QR Canvas goes here -->
+          <!-- Locally generated QR Canvas goes here -->
         </div>
         <p class="text-[10px] text-text-secondary text-center max-w-[200px] leading-relaxed">
           Open this app on the receiver and scan this QR to connect instantly.
@@ -282,9 +304,20 @@
       <div class="glass-panel rounded-2xl p-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
           <div class="w-4 h-4 rounded-full border-2 border-slate-700 border-t-accent animate-spin"></div>
-          <span class="text-xs font-semibold text-text-secondary">Waiting for receiver to connect...</span>
+          <span class="text-xs font-semibold text-text-secondary">Waiting for receiver…</span>
         </div>
-        <span class="text-[10px] text-success font-black uppercase tracking-wider animate-pulse">Room Ready</span>
+        <span class="status-badge bg-success/10 text-success border border-success/20 animate-pulse">Room Ready</span>
+      </div>
+
+      <!-- Connection Diagnostics Log (shown on failure) -->
+      <div id="diagnostics-card-sender" class="hidden glass-panel rounded-2xl p-4 flex flex-col gap-2 border-yellow-500/20 bg-yellow-950/10">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-black uppercase tracking-wider text-yellow-400">Connection Diagnostics</span>
+          <button id="btn-toggle-diag-sender" class="text-[9px] text-text-secondary hover:text-white font-bold transition cursor-pointer">Collapse</button>
+        </div>
+        <div id="diagnostics-log-sender" class="diag-log-box max-h-28 overflow-y-auto flex flex-col gap-1 font-mono">
+          <!-- Dynamic diagnostic entries -->
+        </div>
       </div>
     </section>
 
@@ -300,12 +333,12 @@
 
       <!-- Progress Panel -->
       <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
-        <div class="flex justify-between items-center text-xs text-text-secondary">
+        <div class="flex justify-between items-center text-[11px] text-text-secondary">
           <span class="font-bold uppercase tracking-wider">Overall Progress</span>
-          <span class="text-accent font-mono font-bold" id="send-progress-percent">0%</span>
+          <span class="text-accent font-mono font-bold text-sm" id="send-progress-percent">0%</span>
         </div>
         
-        <div class="w-full h-3 rounded-full bg-slate-900 border border-border overflow-hidden">
+        <div class="w-full h-3 rounded-full bg-slate-900/80 border border-border overflow-hidden">
           <div class="h-full rounded-full transition-all duration-300 shimmer-bar" id="send-progress-bar" style="width: 0%;"></div>
         </div>
 
@@ -318,14 +351,14 @@
 
       <!-- File Status List -->
       <div class="glass-panel rounded-2xl p-4 flex flex-col gap-3">
-        <span class="text-xs font-extrabold text-text-secondary uppercase border-b border-border pb-2">Transmission Queue</span>
-        <div class="max-h-48 overflow-y-auto flex flex-col gap-2.5 pr-1" id="send-queue-container">
+        <span class="text-[11px] font-extrabold text-text-secondary uppercase border-b border-border pb-2">Transmission Queue</span>
+        <div class="max-h-48 overflow-y-auto flex flex-col gap-2 pr-1" id="send-queue-container">
           <!-- Dynamically populated payload items -->
         </div>
       </div>
 
       <!-- Finished Action -->
-      <button id="btn-send-done" class="hidden w-full py-4 px-6 rounded-2xl bg-success text-bg font-bold flex items-center justify-center gap-2 hover:bg-success-hover transition cursor-pointer">
+      <button id="btn-send-done" class="hidden btn-success">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="20 6 9 17 4 12"/>
         </svg>
@@ -333,8 +366,8 @@
       </button>
 
       <!-- Cancel Action -->
-      <button id="btn-cancel-send" class="w-full py-3 px-5 rounded-xl bg-red-950/20 border border-red-500/20 text-red-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-950/30 transition cursor-pointer">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button id="btn-cancel-send" class="btn-danger">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
         Cancel Transfer
@@ -344,31 +377,31 @@
     <!-- SCREEN: Receive - Enter Room Code -->
     <section id="s-recv-offer" class="screen hidden flex flex-col gap-5" aria-labelledby="recv-offer-heading">
       <div class="flex items-center gap-3">
-        <button class="btn-back w-9 h-9 rounded-xl border border-border hover:bg-white/5 flex items-center justify-center transition cursor-pointer" aria-label="Go back">
-          <svg class="w-4 h-4 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <button class="btn-back btn-icon" aria-label="Go back">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <span class="text-xs font-bold uppercase tracking-wider text-text-secondary">Step 1 — Connect</span>
+        <span class="text-[11px] font-bold uppercase tracking-wider text-text-secondary">Step 1 — Connect</span>
       </div>
 
       <h2 id="recv-offer-heading" class="text-xl font-bold tracking-tight">Enter Room Code</h2>
 
       <!-- Verification Input Panel -->
       <div class="glass-panel rounded-2xl p-6 flex flex-col items-center gap-5">
-        <span class="text-xs font-bold text-text-secondary uppercase tracking-widest">Enter 6-digit Sender Code</span>
+        <span class="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Enter 6-digit Sender Code</span>
         
         <!-- Digit Fields -->
         <div class="flex gap-2 justify-center" id="code-fields-wrapper">
-          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-1" aria-label="Digit 1" inputmode="numeric">
-          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-2" aria-label="Digit 2" inputmode="numeric">
-          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-3" aria-label="Digit 3" inputmode="numeric">
-          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-4" aria-label="Digit 4" inputmode="numeric">
-          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-5" aria-label="Digit 5" inputmode="numeric">
-          <input type="text" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-6" aria-label="Digit 6" inputmode="numeric">
+          <input type="tel" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-1" aria-label="Digit 1" inputmode="numeric">
+          <input type="tel" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-2" aria-label="Digit 2" inputmode="numeric">
+          <input type="tel" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-3" aria-label="Digit 3" inputmode="numeric">
+          <input type="tel" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-4" aria-label="Digit 4" inputmode="numeric">
+          <input type="tel" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-5" aria-label="Digit 5" inputmode="numeric">
+          <input type="tel" maxlength="1" pattern="[0-9]" class="digit-input" id="digit-6" aria-label="Digit 6" inputmode="numeric">
         </div>
 
-        <button id="btn-submit-code" disabled class="w-full py-3 px-5 rounded-xl bg-accent text-white font-bold flex items-center justify-center gap-2 opacity-50 cursor-not-allowed transition">
+        <button id="btn-submit-code" disabled class="btn-primary opacity-50 cursor-not-allowed">
           <span>Connect to Sender</span>
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="5" y1="12" x2="19" y2="12"/>
@@ -392,19 +425,33 @@
           <div class="cam-wrap relative rounded-xl border border-border/80 overflow-hidden bg-black aspect-square max-w-xs mx-auto">
             <video id="scan-camera-el" autoplay playsinline muted class="w-full h-full object-cover"></video>
             
-            <!-- Scanning Guidelines Box -->
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div class="w-3/5 h-3/5 border-2 border-accent rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                <!-- Glowing corner bounds -->
-                <div class="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-accent -mt-1 -ml-1"></div>
-                <div class="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-accent -mt-1 -mr-1"></div>
-                <div class="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-accent -mb-1 -ml-1"></div>
-                <div class="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-accent -mb-1 -mr-1"></div>
-                <div class="absolute inset-x-0 top-0 h-0.5 bg-accent/80 scan-line"></div>
+            <!-- Scanning Reticle Target Guide -->
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none" id="camera-reticle-overlay">
+              <div class="w-3/5 h-3/5 rounded-2xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]" id="camera-reticle-box">
+                <!-- Pulsing corner bounds -->
+                <div class="reticle-corner absolute top-0 left-0 w-5 h-5 border-t-[3px] border-l-[3px] border-accent -mt-px -ml-px rounded-tl-md"></div>
+                <div class="reticle-corner absolute top-0 right-0 w-5 h-5 border-t-[3px] border-r-[3px] border-accent -mt-px -mr-px rounded-tr-md"></div>
+                <div class="reticle-corner absolute bottom-0 left-0 w-5 h-5 border-b-[3px] border-l-[3px] border-accent -mb-px -ml-px rounded-bl-md"></div>
+                <div class="reticle-corner absolute bottom-0 right-0 w-5 h-5 border-b-[3px] border-r-[3px] border-accent -mb-px -mr-px rounded-br-md"></div>
+                <!-- Scanning sweep line -->
+                <div class="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-accent to-transparent scan-line opacity-90"></div>
+                <!-- Center crosshair dot -->
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-accent/60 reticle-pulse"></div>
               </div>
             </div>
           </div>
           <span class="text-[10px] text-text-secondary text-center block mt-1" id="scan-camera-status">Point camera at the sender's QR code.</span>
+        </div>
+      </div>
+
+      <!-- Connection Diagnostics Log (shown on failure) -->
+      <div id="diagnostics-card-receiver" class="hidden glass-panel rounded-2xl p-4 flex flex-col gap-2 border-yellow-500/20 bg-yellow-950/10">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] font-black uppercase tracking-wider text-yellow-400">Connection Diagnostics</span>
+          <button id="btn-toggle-diag-receiver" class="text-[9px] text-text-secondary hover:text-white font-bold transition cursor-pointer">Collapse</button>
+        </div>
+        <div id="diagnostics-log-receiver" class="diag-log-box max-h-28 overflow-y-auto flex flex-col gap-1 font-mono">
+          <!-- Dynamic diagnostic entries -->
         </div>
       </div>
     </section>
@@ -421,12 +468,12 @@
 
       <!-- Progress Panel -->
       <div class="glass-panel rounded-2xl p-5 flex flex-col gap-4">
-        <div class="flex justify-between items-center text-xs text-text-secondary">
+        <div class="flex justify-between items-center text-[11px] text-text-secondary">
           <span class="font-bold uppercase tracking-wider">Overall Progress</span>
-          <span class="text-accent font-mono font-bold" id="recv-progress-percent">0%</span>
+          <span class="text-accent font-mono font-bold text-sm" id="recv-progress-percent">0%</span>
         </div>
         
-        <div class="w-full h-3 rounded-full bg-slate-900 border border-border overflow-hidden">
+        <div class="w-full h-3 rounded-full bg-slate-900/80 border border-border overflow-hidden">
           <div class="h-full rounded-full transition-all duration-300 shimmer-bar" id="recv-progress-bar" style="width: 0%;"></div>
         </div>
 
@@ -439,15 +486,15 @@
 
       <!-- File Status / Download List -->
       <div class="glass-panel rounded-2xl p-4 flex flex-col gap-3">
-        <span class="text-xs font-extrabold text-text-secondary uppercase border-b border-border pb-2">Payload Content</span>
-        <div class="max-h-56 overflow-y-auto flex flex-col gap-2.5 pr-1" id="recv-queue-container">
+        <span class="text-[11px] font-extrabold text-text-secondary uppercase border-b border-border pb-2">Payload Content</span>
+        <div class="max-h-56 overflow-y-auto flex flex-col gap-2 pr-1" id="recv-queue-container">
           <!-- Dynamically populated files to download -->
         </div>
       </div>
 
       <!-- Done / ZIP Actions -->
       <div class="flex flex-col gap-2">
-        <button id="btn-download-zip" class="hidden w-full py-4 px-6 rounded-2xl bg-accent text-white font-bold flex items-center justify-center gap-2 hover:bg-accent-hover transition cursor-pointer">
+        <button id="btn-download-zip" class="hidden btn-primary">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="7 10 12 15 17 10"/>
@@ -456,7 +503,7 @@
           Download All as ZIP
         </button>
 
-        <button id="btn-recv-done" class="hidden w-full py-4 px-6 rounded-2xl bg-success text-bg font-bold flex items-center justify-center gap-2 hover:bg-success-hover transition cursor-pointer">
+        <button id="btn-recv-done" class="hidden btn-success">
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
@@ -465,8 +512,8 @@
       </div>
 
       <!-- Cancel Action -->
-      <button id="btn-cancel-recv" class="w-full py-3 px-5 rounded-xl bg-red-950/20 border border-red-500/20 text-red-400 text-xs font-bold flex items-center justify-center gap-2 hover:bg-red-950/30 transition cursor-pointer">
-        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button id="btn-cancel-recv" class="btn-danger">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
         Cancel Transfer
@@ -488,7 +535,7 @@
     </button>
   </div>
 
-  <!-- PWA Update Reload Toast (Fix 7) -->
+  <!-- PWA Update Reload Toast -->
   <div id="pwa-update-toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-sm p-4 rounded-2xl glass-panel items-center justify-between gap-4 border-accent/30 bg-accent/10 shadow-2xl z-50 animate-slide-up">
     <div class="flex-1 min-w-0">
       <h3 class="text-xs font-extrabold uppercase tracking-wider text-text-primary mb-0.5">Update Available</h3>
@@ -502,14 +549,14 @@
   </div>
 
   <!-- Footer -->
-  <footer class="w-full max-w-md mt-6 text-center text-[10px] text-text-secondary leading-relaxed">
+  <footer class="w-full max-w-md mt-6 text-center text-[10px] text-text-secondary/60 leading-relaxed">
     <p>
-      FileBeam uses end-to-end encrypted WebRTC channels (DTLS-SRTP). No data leaves your network or touch servers. Reworked to meet federal guidelines for offline transmission capability.
+      FileBeam uses end-to-end encrypted WebRTC channels (DTLS-SRTP). No data leaves your network or touches servers.
     </p>
   </footer>
 
-  <!-- Full-Screen Drag & Drop Overlay (Fix 4) -->
-  <div id="drag-drop-overlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center bg-bg/95 backdrop-blur-md border-4 border-dashed border-accent m-4 rounded-3xl pointer-events-none transition-all duration-300">
+  <!-- Full-Screen Drag & Drop Overlay -->
+  <div id="drag-drop-overlay" class="hidden fixed inset-0 z-50 flex flex-col items-center justify-center border-4 border-dashed border-accent m-4 rounded-3xl pointer-events-none transition-all duration-300">
     <div class="w-20 h-20 rounded-3xl bg-accent/10 border border-accent/20 flex items-center justify-center text-accent mb-4 animate-bounce">
       <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
