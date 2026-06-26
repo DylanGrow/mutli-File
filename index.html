@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="FileBeam">
   
   <!-- Security Headers (Implemented client-side where possible, CSP ready) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:; camera-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:;">
 
   <!-- SEO Meta Tags -->
   <title>FileBeam - Secure Peer-to-Peer File Transfer</title>
@@ -529,9 +529,14 @@
         Run offline, instantly load, and access as a standalone app.
       </p>
     </div>
-    <button id="btn-pwa-install" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
-      Install
-    </button>
+    <div class="flex items-center gap-2">
+      <button id="btn-pwa-install" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
+        Install
+      </button>
+      <button id="btn-close-pwa-banner" class="text-text-secondary hover:text-white p-2 transition cursor-pointer" aria-label="Dismiss install banner">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
   </div>
 
   <!-- PWA Update Reload Toast -->

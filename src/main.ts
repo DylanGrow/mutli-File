@@ -23,6 +23,33 @@ interface ControlMessage {
   errorMsg?: string;
 }
 
+// Memory fallback for localStorage in case of SecurityError / Private browsing blocks (Fix 5)
+const storageMemoryFallback: Record<string, string> = {};
+
+function safeStorageGet(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch (err) {
+    return storageMemoryFallback[key] || null;
+  }
+}
+
+function safeStorageSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    storageMemoryFallback[key] = value;
+  }
+}
+
+function safeStorageRemove(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch (err) {
+    delete storageMemoryFallback[key];
+  }
+}
+
 // Cryptographic helpers for zero-knowledge end-to-end encryption (Fix 1)
 function bufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -117,7 +144,7 @@ async function decryptChunk(packedBuffer: ArrayBuffer, key: CryptoKey): Promise<
 
 // Fetch ICE servers configured in Settings (Fix 2)
 function getIceServers(): RTCIceServer[] {
-  const custom = localStorage.getItem('fb_ice_config');
+  const custom = safeStorageGet('fb_ice_config');
   if (custom) {
     try {
       const parsed = JSON.parse(custom);
@@ -136,10 +163,14 @@ function getIceServers(): RTCIceServer[] {
 async function traverseDirectoryEntry(entry: any, path: string = ''): Promise<ExtendedFile[]> {
   const files: ExtendedFile[] = [];
   if (entry.isFile) {
-    const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
-    const extFile = file as ExtendedFile;
-    extFile.relativePath = path + entry.name;
-    files.push(extFile);
+    try {
+      const file = await new Promise<File>((resolve, reject) => entry.file(resolve, reject));
+      const extFile = file as ExtendedFile;
+      extFile.relativePath = path + entry.name;
+      files.push(extFile);
+    } catch (err) {
+      console.warn(`File permission/access error for "${entry.name}" inside directory traversal. Skipped:`, err);
+    }
   } else if (entry.isDirectory) {
     const dirReader = entry.createReader();
     const entries = await new Promise<any[]>((resolve) => {
@@ -157,8 +188,12 @@ async function traverseDirectoryEntry(entry: any, path: string = ''): Promise<Ex
       readAll();
     });
     for (const subEntry of entries) {
-      const subFiles = await traverseDirectoryEntry(subEntry, path + entry.name + '/');
-      files.push(...subFiles);
+      try {
+        const subFiles = await traverseDirectoryEntry(subEntry, path + entry.name + '/');
+        files.push(...subFiles);
+      } catch (err) {
+        console.warn(`Folder permission/access error in subdirectory "${subEntry.name}". Skipped:`, err);
+      }
     }
   }
   return files;
@@ -330,7 +365,7 @@ function showUpdateToast(worker: ServiceWorker) {
 let myPeer: Peer | null = null;
 let currentConn: DataConnection | null = null;
 let selectedFiles: ExtendedFile[] = [];
-let receivedFiles: { name: string; blob: Blob; size: number }[] = [];
+let receivedFiles: { name: string; blob: Blob; size: number; fileIndex: number }[] = [];
 let transferKey: CryptoKey | null = null; // AES key for end-to-end encryption (Fix 1)
 let isDynamicChunkTuningEnabled = true; // Dynamic chunk size (Fix 5)
 let connectionTimeoutId: number | null = null; // Connection timeout tracker
@@ -774,7 +809,7 @@ function setupHomeListeners() {
 
   // Clear history button click listener
   document.getElementById('btn-clear-history')?.addEventListener('click', () => {
-    localStorage.removeItem('fbeam_history');
+    safeStorageRemove('fbeam_history');
     loadHistoryUI();
   });
 
@@ -784,7 +819,7 @@ function setupHomeListeners() {
     const iceJsonEl = document.getElementById('settings-ice-json') as HTMLTextAreaElement;
     const chunkTuneEl = document.getElementById('settings-chk-chunk-tune') as HTMLInputElement;
     if (iceJsonEl) {
-      const stored = localStorage.getItem('fb_ice_config') || '';
+      const stored = safeStorageGet('fb_ice_config') || '';
       iceJsonEl.value = stored;
     }
     if (chunkTuneEl) {
@@ -792,7 +827,7 @@ function setupHomeListeners() {
     }
     const speedLimitEl = document.getElementById('settings-speed-limit') as HTMLSelectElement;
     if (speedLimitEl) {
-      speedLimitEl.value = localStorage.getItem('fb_speed_limit') || '0';
+      speedLimitEl.value = safeStorageGet('fb_speed_limit') || '0';
     }
   });
 
@@ -810,7 +845,7 @@ function setupHomeListeners() {
     if (iceJsonEl) {
       const val = iceJsonEl.value.trim();
       if (val === '') {
-        localStorage.removeItem('fb_ice_config');
+        safeStorageRemove('fb_ice_config');
       } else {
         try {
           const parsed = JSON.parse(val);
@@ -818,7 +853,7 @@ function setupHomeListeners() {
             showToast('ICE config must be a JSON array of RTCIceServer objects.');
             return;
           }
-          localStorage.setItem('fb_ice_config', JSON.stringify(parsed, null, 2));
+          safeStorageSet('fb_ice_config', JSON.stringify(parsed, null, 2));
         } catch (err) {
           showToast('Invalid JSON syntax in ICE configuration.');
           return;
@@ -830,7 +865,7 @@ function setupHomeListeners() {
     }
     const speedLimitEl = document.getElementById('settings-speed-limit') as HTMLSelectElement;
     if (speedLimitEl) {
-      localStorage.setItem('fb_speed_limit', speedLimitEl.value);
+      safeStorageSet('fb_speed_limit', speedLimitEl.value);
     }
     showToast('Settings saved successfully.');
     showScreen('s-home');
@@ -1611,6 +1646,7 @@ async function sendSingleFile(file: File, fileIndex: number) {
       throw new Error('Connection closed before creating chunk');
     }
 
+    const stepStart = performance.now();
     const chunkSlice = file.slice(offset, offset + chunkSize);
     const rawBuffer = await chunkSlice.arrayBuffer();
     const rawLength = rawBuffer.byteLength;
@@ -1650,12 +1686,14 @@ async function sendSingleFile(file: File, fileIndex: number) {
     offset += rawLength;
     transferredBytes += rawLength;
 
-    const speedLimitMBps = parseInt(localStorage.getItem('fb_speed_limit') || '0', 10);
-    if (speedLimitMBps > 0 && smoothSpeed > 0) {
+    const speedLimitMBps = parseInt(safeStorageGet('fb_speed_limit') || '0', 10);
+    if (speedLimitMBps > 0) {
       const limitBps = speedLimitMBps * 1024 * 1024;
-      if (smoothSpeed > limitBps) {
-        const delayMs = Math.min(50, Math.ceil((smoothSpeed / limitBps - 1) * 10));
-        if (delayMs > 0) await sleep(delayMs);
+      const targetDurationMs = (rawLength / limitBps) * 1000;
+      const stepDurationMs = performance.now() - stepStart;
+      const delayMs = targetDurationMs - stepDurationMs;
+      if (delayMs > 0) {
+        await sleep(delayMs);
       }
     }
 
@@ -2057,19 +2095,22 @@ function setupReceiverConnection() {
 
         logDiagnostic(`Successfully received file: "${meta.name}"`, 'success');
 
-        // Add to received list
+        // Add to received list (Fix 10)
         receivedFiles.push({
           name: meta.name,
           blob,
-          size: meta.size
+          size: meta.size,
+          fileIndex: msg.fileIndex
         });
 
         // Update UI status to completed and render local download button
         updateFileStatusUI(msg.fileIndex, 'Ready to Save', 'text-success font-bold');
         enableDownloadBtn(msg.fileIndex, blob, meta.name);
         
-        // Auto trigger download for government level UX
-        triggerLocalDownload(blob, meta.name);
+        // Auto trigger download for single-file transfers to prevent browser download spam (Fix 9)
+        if (fileMeta.length === 1) {
+          triggerLocalDownload(blob, meta.name);
+        }
       } else if (msg.type === 'error') {
         playSynthesizedTone('error');
         logDiagnostic(`Transfer aborted by sender: ${msg.errorMsg}`, 'error');
@@ -2129,7 +2170,7 @@ function setupReceiverConnection() {
                 zipBtn.textContent = 'Packaging ZIP...';
                 // Package files into a single ZIP
                 const zipFiles = receivedFiles.map(rf => {
-                  const meta = fileMeta.find(m => m.name === rf.name && m.size === rf.size);
+                  const meta = fileMeta[rf.fileIndex];
                   return {
                     name: meta?.path || rf.name,
                     blob: rf.blob
@@ -2269,12 +2310,24 @@ function enableDownloadBtn(index: number, blob: Blob, filename: string) {
 // Trigger browser download safely
 function triggerLocalDownload(blob: Blob, filename: string) {
   // Sanitize filename: strip characters that are illegal in Windows/macOS/Linux paths
-  // Keep spaces and normal letters, replace illegal characters with underscores
-  const sanitizedFilename = filename.replace(/[\x00-\x1f\\/:*?"<>|]/g, '_').substring(0, 100);
+  let sanitized = filename.replace(/[\x00-\x1f\\/:*?"<>|]/g, '_');
+  
+  // Truncate name to max 100 chars while preserving extension (Fix 3)
+  if (sanitized.length > 100) {
+    const lastDotIdx = sanitized.lastIndexOf('.');
+    if (lastDotIdx !== -1 && lastDotIdx > sanitized.length - 12) {
+      const ext = sanitized.substring(lastDotIdx);
+      const base = sanitized.substring(0, lastDotIdx);
+      sanitized = base.substring(0, 100 - ext.length) + ext;
+    } else {
+      sanitized = sanitized.substring(0, 100);
+    }
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = sanitizedFilename || 'downloaded_file';
+  a.download = sanitized || 'downloaded_file';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -2329,7 +2382,12 @@ async function startCamera() {
         ctx.drawImage(video, 0, 0, w, h);
         
         const imgData = ctx.getImageData(0, 0, w, h);
-        const code = jsQR(imgData.data, imgData.width, imgData.height);
+        let code = null;
+        try {
+          code = jsQR(imgData.data, imgData.width, imgData.height);
+        } catch (qrErr) {
+          console.warn('QR decoder temporary processing error:', qrErr);
+        }
         
         if (code && code.data) {
           if (statusEl) statusEl.textContent = 'QR Code Scanned!';
@@ -2384,12 +2442,12 @@ async function startCamera() {
 function saveToHistory(files: { name: string; size: number }[], direction: 'sent' | 'received') {
   let list: HistoryItem[] = [];
   try {
-    const raw = localStorage.getItem('fbeam_history') || '[]';
+    const raw = safeStorageGet('fbeam_history') || '[]';
     try {
       list = JSON.parse(raw);
       if (!Array.isArray(list)) list = [];
     } catch (_) {
-      localStorage.removeItem('fbeam_history');
+      safeStorageRemove('fbeam_history');
       list = [];
     }
     
@@ -2406,7 +2464,7 @@ function saveToHistory(files: { name: string; size: number }[], direction: 'sent
     let saved = false;
     while (!saved && list.length > 0) {
       try {
-        localStorage.setItem('fbeam_history', JSON.stringify(list));
+        safeStorageSet('fbeam_history', JSON.stringify(list));
         saved = true;
       } catch (err) {
         if (list.length > 0) {
@@ -2440,13 +2498,13 @@ function loadHistoryUI() {
   if (!container || !card) return;
 
   try {
-    const raw = localStorage.getItem('fbeam_history') || '[]';
+    const raw = safeStorageGet('fbeam_history') || '[]';
     let list: HistoryItem[] = [];
     try {
       list = JSON.parse(raw);
       if (!Array.isArray(list)) list = [];
     } catch (_) {
-      localStorage.removeItem('fbeam_history');
+      safeStorageRemove('fbeam_history');
       list = [];
     }
 
@@ -2517,11 +2575,14 @@ function stopCamera() {
 
 
 
-// Handle PWA Install banner state
+// Handle PWA Install banner state (Fix 7)
 let deferredPrompt: any = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
+  if (safeStorageGet('fbeam_pwa_dismissed') === 'true') {
+    return;
+  }
   const banner = document.getElementById('pwa-install-banner');
   if (banner) {
     banner.classList.remove('hidden');
@@ -2540,6 +2601,15 @@ document.getElementById('btn-pwa-install')?.addEventListener('click', () => {
       deferredPrompt = null;
     });
   }
+});
+
+document.getElementById('btn-close-pwa-banner')?.addEventListener('click', () => {
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) {
+    banner.classList.add('hidden');
+    banner.classList.remove('flex');
+  }
+  safeStorageSet('fbeam_pwa_dismissed', 'true');
 });
 
 // Handle page visibility change (Fix 3, 10)

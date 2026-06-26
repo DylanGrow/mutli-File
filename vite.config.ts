@@ -38,10 +38,15 @@ export default defineConfig({
         navigateFallback: 'index.html',
         runtimeCaching: [
           {
-            // Cache local WebRTC / PeerJS signaling connection code or library if imported.
-            // Vite bundles PeerJS, so it will be in the asset cache automatically!
-            urlPattern: /^https:\/\/fonts\.googleapis\.com/,
-            handler: 'NetworkOnly' // Disallow external fonts
+            urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts-cache',
+              expiration: {
+                maxEntries: 10,
+                maxAgeSeconds: 60 * 60 * 24 * 365 // 1 year
+              }
+            }
           }
         ]
       }
