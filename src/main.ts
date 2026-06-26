@@ -345,6 +345,9 @@ let isConnecting = false;
 let heartbeatInterval: number | null = null;
 let lastHeartbeatTime = 0;
 let speedTicks = 0;
+let diagnosticsLog: { time: string; msg: string; type: 'info' | 'success' | 'warning' | 'error' }[] = [];
+let previewObjectUrls: string[] = [];
+let toastTimeoutId: number | null = null;
 
 // History typing
 interface HistoryItem {
@@ -396,7 +399,7 @@ function releaseWakeLock() {
   }
 }
 
-// Custom Toast Notification Handler (Avoids blocking alert UI)
+// Custom Toast Notification Handler (Avoids blocking alert UI) (Fix 10)
 function showToast(msg: string) {
   const banner = document.getElementById('toast-banner');
   const messageEl = document.getElementById('toast-message');
@@ -405,11 +408,35 @@ function showToast(msg: string) {
   banner.classList.remove('hidden');
   banner.classList.add('flex');
   
+  if (toastTimeoutId) {
+    clearTimeout(toastTimeoutId);
+  }
+  
   // Auto-hide toast banner after 5 seconds
-  setTimeout(() => {
+  toastTimeoutId = setTimeout(() => {
     banner.classList.add('hidden');
     banner.classList.remove('flex');
-  }, 5000);
+    toastTimeoutId = null;
+  }, 5000) as unknown as number;
+}
+
+// Connection diagnostics logging helper (Fix 1)
+function logDiagnostic(msg: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') {
+  const time = new Date().toLocaleTimeString();
+  diagnosticsLog.push({ time, msg, type });
+  console.log(`[Diagnostic] [${type}] ${msg}`);
+  
+  // Render to both sender and receiver boxes
+  ['sender', 'receiver'].forEach(side => {
+    const container = document.getElementById(`diagnostics-log-${side}`);
+    if (container) {
+      const entry = document.createElement('div');
+      entry.className = `diag-log-entry ${type}`;
+      entry.textContent = `[${time}] ${msg}`;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+    }
+  });
 }
 
 // Dynamic progress bar status colors
@@ -462,6 +489,14 @@ function playSynthesizedTone(type: 'success' | 'error') {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
     const ctx = new AudioContextClass();
+    
+    // Safety check for suspended state (Fix 7)
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {
+        console.warn('AudioContext failed to resume due to user gesture requirements.');
+      });
+    }
+
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     
@@ -608,6 +643,23 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCodeInputListeners();
   checkUrlParams();
   loadHistoryUI(); // Load recent transfers list on launch
+
+  // Toggle connection diagnostics log boxes (Fix 1)
+  ['sender', 'receiver'].forEach(side => {
+    document.getElementById(`btn-toggle-diag-${side}`)?.addEventListener('click', (e) => {
+      const btn = e.currentTarget as HTMLButtonElement;
+      const logBox = document.getElementById(`diagnostics-log-${side}`);
+      if (logBox) {
+        if (logBox.classList.contains('hidden')) {
+          logBox.classList.remove('hidden');
+          btn.textContent = 'Collapse';
+        } else {
+          logBox.classList.add('hidden');
+          btn.textContent = 'Expand';
+        }
+      }
+    });
+  });
 
   // Toast close button listener
   document.getElementById('btn-close-toast')?.addEventListener('click', () => {
@@ -836,6 +888,13 @@ function resetState() {
   transferKey = null; // Clear key on reset (Fix 1)
   document.getElementById('btn-download-zip')?.classList.add('hidden'); // Hide ZIP button on reset (Fix 3)
   stopHeartbeat();
+  
+  // Revoke image preview object URLs (Fix 6)
+  previewObjectUrls.forEach((url) => {
+    try { URL.revokeObjectURL(url); } catch (_) {}
+  });
+  previewObjectUrls = [];
+
   updateConnectionStatus('disconnected');
 }
 
@@ -949,10 +1008,19 @@ function setupFileSelectionListeners() {
     const sendFileScreen = document.getElementById('s-send-file');
     if (sendFileScreen && !sendFileScreen.classList.contains('hidden')) {
       dragCounter--;
-      if (dragCounter === 0 && dragOverlay) {
+      if ((dragCounter <= 0 || !e.relatedTarget) && dragOverlay) {
+        dragCounter = 0;
         dragOverlay.classList.add('hidden');
         dragOverlay.classList.remove('flex');
       }
+    }
+  });
+
+  window.addEventListener('dragend', () => {
+    dragCounter = 0;
+    if (dragOverlay) {
+      dragOverlay.classList.add('hidden');
+      dragOverlay.classList.remove('flex');
     }
   });
 
@@ -1127,8 +1195,13 @@ function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
-// Generate Room Code and initialize PeerJS room (Fix 5, 9)
+// Generate Room Code and initialize PeerJS room (Fix 1, 4, 9)
 async function initializeSenderRoom(retryCount: number = 0) {
+  if (retryCount === 0) {
+    diagnosticsLog = [];
+    logDiagnostic('Initializing sender room creation...', 'info');
+  }
+  
   resetState(); // Clean up previous connections and timeouts
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const displayEl = document.getElementById('room-code-display');
@@ -1141,8 +1214,10 @@ async function initializeSenderRoom(retryCount: number = 0) {
   // Generate random AES key for end-to-end encryption (Fix 1)
   try {
     transferKey = await generateEncryptionKey();
+    logDiagnostic('E2E Encryption key generated.', 'success');
   } catch (err) {
     console.error('Failed to generate encryption key:', err);
+    logDiagnostic('Failed to generate E2E encryption key.', 'error');
     showToast('Encryption setup failed.');
     resetState();
     showScreen('s-home');
@@ -1155,11 +1230,15 @@ async function initializeSenderRoom(retryCount: number = 0) {
   // Start 15-second room connection timeout (Fix 5)
   serverTimeoutId = setTimeout(() => {
     if (!myPeer || !myPeer.open) {
+      logDiagnostic('Signaling connection timed out after 15 seconds.', 'error');
       showToast('Failed to connect to signaling server. Timeout reached.');
+      document.getElementById('diagnostics-card-sender')?.classList.remove('hidden');
       resetState();
       showScreen('s-home');
     }
   }, 15000) as unknown as number;
+
+  logDiagnostic(`Connecting to PeerJS signaling server with ID: ${peerId} (attempt ${retryCount + 1})...`, 'info');
 
   // strict security configurations
   myPeer = new Peer(peerId, {
@@ -1170,6 +1249,7 @@ async function initializeSenderRoom(retryCount: number = 0) {
   });
 
   myPeer.on('open', async () => {
+    logDiagnostic('Signaling connection established.', 'success');
     if (serverTimeoutId) {
       clearTimeout(serverTimeoutId);
       serverTimeoutId = null;
@@ -1236,6 +1316,16 @@ async function initializeSenderRoom(retryCount: number = 0) {
   });
 
   myPeer.on('connection', (conn) => {
+    // Peer Hijacking double-connection protection (Fix 9)
+    if (currentConn && currentConn.open) {
+      logDiagnostic('Blocked secondary connection attempt to keep the active transfer secure.', 'warning');
+      conn.on('open', () => {
+        try { conn.close(); } catch (_) {}
+      });
+      return;
+    }
+    
+    logDiagnostic('Incoming connection negotiation initiated...', 'info');
     currentConn = conn;
     setupSenderConnection();
   });
@@ -1243,7 +1333,7 @@ async function initializeSenderRoom(retryCount: number = 0) {
   myPeer.on('error', (err: any) => {
     // Safeguard: if transfer is in progress, ignore signaling errors (Fix 3)
     if (currentConn && currentConn.open) {
-      console.warn('Signaling server error ignored as WebRTC direct transfer is active:', err);
+      logDiagnostic(`Signaling error ignored during active transfer: ${err.type || err}`, 'warning');
       return;
     }
 
@@ -1252,43 +1342,61 @@ async function initializeSenderRoom(retryCount: number = 0) {
       serverTimeoutId = null;
     }
     
-    // Auto-collision check (Fix 9)
-    if (err.type === 'unavailable-id') {
-      if (retryCount < 3) {
-        console.warn(`ID collision detected, retrying (attempt ${retryCount + 1})...`);
-        if (myPeer) {
-          myPeer.destroy();
-          myPeer = null;
-        }
-        initializeSenderRoom(retryCount + 1);
-        return;
+    logDiagnostic(`Signaling error details: ${err.type || err.message || err}`, 'error');
+
+    if (retryCount < 3) {
+      const delay = (retryCount + 1) * 1000;
+      logDiagnostic(`Signaling connection failed. Retrying (attempt ${retryCount + 1} of 3) in ${delay}ms...`, 'warning');
+      if (myPeer) {
+        myPeer.destroy();
+        myPeer = null;
       }
+      setTimeout(() => {
+        initializeSenderRoom(retryCount + 1);
+      }, delay);
+      return;
     }
 
     console.error('Peer error:', err);
     showToast('Failed to establish room. Adblocker or strict firewall blocking connection.');
+    document.getElementById('diagnostics-card-sender')?.classList.remove('hidden');
     resetState();
     showScreen('s-home');
   });
 }
 
-// Monitor underlying WebRTC peer connection state changes
+// Monitor underlying WebRTC peer connection state changes (Fix 1)
 function monitorPeerConnection(pc: RTCPeerConnection) {
+  logDiagnostic(`WebRTC Connection State: ${pc.connectionState}`, 'info');
+  logDiagnostic(`WebRTC ICE Gathering State: ${pc.iceGatheringState}`, 'info');
+
   pc.addEventListener('connectionstatechange', () => {
     const state = pc.connectionState;
+    logDiagnostic(`WebRTC Connection State Changed: ${state}`, state === 'connected' ? 'success' : (state === 'failed' || state === 'closed' ? 'error' : 'info'));
     if (state === 'failed' || state === 'closed') {
       showToast('WebRTC connection lost. Transfer aborted.');
       resetState();
       showScreen('s-home');
     }
   });
+
+  pc.addEventListener('icegatheringstatechange', () => {
+    logDiagnostic(`WebRTC ICE Gathering State Changed: ${pc.iceGatheringState}`, 'info');
+  });
+
+  pc.addEventListener('iceconnectionstatechange', () => {
+    logDiagnostic(`WebRTC ICE Connection State Changed: ${pc.iceConnectionState}`, 'info');
+  });
 }
 
-// Setup connection handlers on sender side
+// Setup connection handlers on sender side (Fix 1)
 function setupSenderConnection() {
   if (!currentConn) return;
 
+  logDiagnostic('WebRTC DataChannel initialized. Establishing handshake...', 'info');
+
   currentConn.on('open', () => {
+    logDiagnostic('WebRTC DataChannel opened successfully.', 'success');
     if (currentConn?.peerConnection) {
       monitorPeerConnection(currentConn.peerConnection);
     }
@@ -1305,6 +1413,7 @@ function setupSenderConnection() {
   });
 
   currentConn.on('close', () => {
+    logDiagnostic('WebRTC DataChannel closed by receiver.', 'warning');
     updateConnectionStatus('disconnected', 'Receiver Disconnected');
     showToast('Connection closed by receiver.');
     resetState();
@@ -1312,6 +1421,7 @@ function setupSenderConnection() {
   });
 
   currentConn.on('error', (err) => {
+    logDiagnostic(`WebRTC DataChannel error: ${err.message || err}`, 'error');
     console.error('Connection error:', err);
     resetState();
     showScreen('s-home');
@@ -1598,11 +1708,15 @@ function startSpeedTracker(isSending: boolean) {
     }
 
     if (etaEl && smoothSpeed > 100 && speedTicks > 2) {
-      const remainingBytes = totalBytesToTransfer - transferredBytes;
+      const remainingBytes = Math.max(0, totalBytesToTransfer - transferredBytes);
       const secondsLeft = Math.ceil(remainingBytes / smoothSpeed);
-      const minutes = Math.floor(secondsLeft / 60);
-      const seconds = secondsLeft % 60;
-      etaEl.textContent = `ETA: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+      if (isFinite(secondsLeft) && secondsLeft >= 0 && secondsLeft < 99 * 3600) {
+        const minutes = Math.floor(secondsLeft / 60);
+        const seconds = secondsLeft % 60;
+        etaEl.textContent = `ETA: ${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+      } else {
+        etaEl.textContent = 'ETA: --:--';
+      }
     } else if (etaEl) {
       etaEl.textContent = 'ETA: --:--';
     }
@@ -1664,6 +1778,14 @@ function setupCodeInputListeners() {
         if (/^\d{6}$/.test(code)) {
           connectToSender(code);
         }
+      }
+    });
+
+    // Redirect click to first empty input field to enforce linear entry
+    input.addEventListener('click', () => {
+      const firstEmptyIndex = inputs.findIndex(i => i.value === '');
+      if (firstEmptyIndex !== -1 && firstEmptyIndex < idx) {
+        inputs[firstEmptyIndex].focus();
       }
     });
 
@@ -1748,13 +1870,18 @@ async function connectToSender(code: string) {
   if (isConnecting) return;
   isConnecting = true;
 
+  diagnosticsLog = [];
+  logDiagnostic(`Initiating receiver connection request to room ${code}...`, 'info');
+
   // Derivation of key (Fix 1)
   let keyToUse = transferKey;
   if (!keyToUse) {
     try {
       keyToUse = await deriveKeyFromCode(code);
+      logDiagnostic('Derived E2E decryption key from room code.', 'success');
     } catch (err) {
       console.error('Failed to derive encryption key:', err);
+      logDiagnostic('Failed to derive E2E decryption key.', 'error');
       showToast('Key derivation failed.');
       isConnecting = false;
       return;
@@ -1780,11 +1907,15 @@ async function connectToSender(code: string) {
   // Start 15-second connection timeout
   connectionTimeoutId = setTimeout(() => {
     if (!currentConn || !currentConn.open) {
+      logDiagnostic('Connection attempt timed out. No response from sender.', 'error');
       showToast('Connection timed out. Ensure both devices are on the same network.');
+      document.getElementById('diagnostics-card-receiver')?.classList.remove('hidden');
       resetState();
       showScreen('s-home');
     }
   }, 15000) as unknown as number;
+
+  logDiagnostic(`Connecting to PeerJS signaling server...`, 'info');
 
   myPeer = new Peer({
     debug: 1,
@@ -1794,6 +1925,7 @@ async function connectToSender(code: string) {
   });
 
   myPeer.on('open', () => {
+    logDiagnostic(`Signaling server connected. Handshaking with sender ID: ${peerId}...`, 'info');
     const conn = myPeer!.connect(peerId, {
       reliable: true
     });
@@ -1804,7 +1936,7 @@ async function connectToSender(code: string) {
   myPeer.on('error', (err) => {
     // Safeguard: if transfer is in progress, ignore signaling errors (Fix 3)
     if (currentConn && currentConn.open) {
-      console.warn('Signaling server error ignored as WebRTC direct transfer is active:', err);
+      logDiagnostic(`Signaling error ignored during active transfer: ${err.type || err}`, 'warning');
       return;
     }
 
@@ -1812,8 +1944,10 @@ async function connectToSender(code: string) {
       clearTimeout(connectionTimeoutId);
       connectionTimeoutId = null;
     }
+    logDiagnostic(`Signaling error: ${err.type || err.message || err}`, 'error');
     console.error('Peer error:', err);
     showToast('Connecting failed. Ensure you are on the same network.');
+    document.getElementById('diagnostics-card-receiver')?.classList.remove('hidden');
     resetState();
     showScreen('s-home');
   });
@@ -1823,7 +1957,10 @@ async function connectToSender(code: string) {
 function setupReceiverConnection() {
   if (!currentConn) return;
 
+  logDiagnostic('WebRTC DataChannel initialized. Establishing handshake...', 'info');
+
   currentConn.on('open', () => {
+    logDiagnostic('WebRTC DataChannel opened successfully.', 'success');
     if (connectionTimeoutId) {
       clearTimeout(connectionTimeoutId);
       connectionTimeoutId = null;
@@ -1852,6 +1989,7 @@ function setupReceiverConnection() {
           chunkData = decrypted;
         } catch (decErr) {
           console.error('Decryption failed:', decErr);
+          logDiagnostic('Decryption failed. E2E Key mismatch or chunk corrupted.', 'error');
           showToast('Decryption failed. Key mismatch or corrupted chunk.');
           setProgressBarColor('error', false);
           resetState();
@@ -1881,12 +2019,15 @@ function setupReceiverConnection() {
         transferredBytes = 0;
         lastTransferredBytes = 0;
 
+        logDiagnostic(`Payload metadata received. Total files: ${fileMeta.length}, total size: ${formatBytes(totalBytesToTransfer)}.`, 'info');
+
         // Pre-flight storage space check (Fix 6)
         if (navigator.storage && navigator.storage.estimate) {
           try {
             const estimate = await navigator.storage.estimate();
             const available = (estimate.quota ?? 0) - (estimate.usage ?? 0);
             if (available > 0 && totalBytesToTransfer > available * 0.9) {
+              logDiagnostic(`Available storage (${formatBytes(available)}) is insufficient for payload.`, 'warning');
               showToast(`Warning: Incoming payload size exceeds available storage capacity.`);
             }
           } catch (storageErr) {
@@ -1899,6 +2040,7 @@ function setupReceiverConnection() {
       } else if (msg.type === 'start-file' && typeof msg.fileIndex === 'number') {
         receivingIdx = msg.fileIndex;
         currentFileChunks = [];
+        logDiagnostic(`Receiving file: "${fileMeta[receivingIdx].name}" (${formatBytes(fileMeta[receivingIdx].size)})...`, 'info');
         updateFileStatusUI(receivingIdx, 'Receiving', 'text-accent animate-pulse');
       } else if (msg.type === 'end-file' && typeof msg.fileIndex === 'number') {
         const meta = fileMeta[msg.fileIndex];
@@ -1906,11 +2048,14 @@ function setupReceiverConnection() {
         
         // File size verification check
         if (blob.size !== meta.size) {
+          logDiagnostic(`Integrity check failed for "${meta.name}" (size mismatch: got ${blob.size} bytes, expected ${meta.size}).`, 'error');
           showToast(`Integrity verification failed for "${meta.name}" (size mismatch).`);
           updateFileStatusUI(msg.fileIndex, 'Corrupted', 'text-red-500 font-bold');
           setProgressBarColor('error', false);
           return;
         }
+
+        logDiagnostic(`Successfully received file: "${meta.name}"`, 'success');
 
         // Add to received list
         receivedFiles.push({
@@ -1927,6 +2072,7 @@ function setupReceiverConnection() {
         triggerLocalDownload(blob, meta.name);
       } else if (msg.type === 'error') {
         playSynthesizedTone('error');
+        logDiagnostic(`Transfer aborted by sender: ${msg.errorMsg}`, 'error');
         showToast(msg.errorMsg || 'Transfer error occurred on sender side.');
         setProgressBarColor('error', false);
         const titleEl = document.getElementById('recv-status-title');
@@ -1946,6 +2092,7 @@ function setupReceiverConnection() {
           });
         }
       } else if (msg.type === 'complete') {
+        logDiagnostic('All files received successfully.', 'success');
         if (speedInterval) {
           clearInterval(speedInterval);
           speedInterval = null;
@@ -1962,7 +2109,10 @@ function setupReceiverConnection() {
         const doneBtn = document.getElementById('btn-recv-done');
         if (doneBtn) {
           doneBtn.classList.remove('hidden');
-          doneBtn.addEventListener('click', () => {
+          // Fix event listener leak by replacing node (Fix 5)
+          const newDoneBtn = doneBtn.cloneNode(true) as HTMLElement;
+          doneBtn.parentNode?.replaceChild(newDoneBtn, doneBtn);
+          newDoneBtn.addEventListener('click', () => {
             resetState();
             showScreen('s-home');
           });
@@ -2006,6 +2156,7 @@ function setupReceiverConnection() {
   });
 
   currentConn.on('close', () => {
+    logDiagnostic('WebRTC DataChannel closed by sender.', 'warning');
     updateConnectionStatus('disconnected');
     showToast('Connection closed by sender.');
     resetState();
@@ -2013,6 +2164,7 @@ function setupReceiverConnection() {
   });
 
   currentConn.on('error', (err) => {
+    logDiagnostic(`WebRTC DataChannel error: ${err.message || err}`, 'error');
     console.error('Connection error:', err);
     playSynthesizedTone('error');
     resetState();
@@ -2102,6 +2254,7 @@ function enableDownloadBtn(index: number, blob: Blob, filename: string) {
 
   if (blob.type.startsWith('image/')) {
     const thumbUrl = URL.createObjectURL(blob);
+    previewObjectUrls.push(thumbUrl);
     const thumb = document.createElement('img');
     thumb.src = thumbUrl;
     thumb.alt = filename;
