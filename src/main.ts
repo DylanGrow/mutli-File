@@ -25,8 +25,12 @@ interface ControlMessage {
 
 // Cryptographic helpers for zero-knowledge end-to-end encryption (Fix 1)
 function bufferToBase64(buf: ArrayBuffer): string {
-  const bin = String.fromCharCode(...new Uint8Array(buf));
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 function base64ToBuffer(str: string): ArrayBuffer {
@@ -353,13 +357,13 @@ interface HistoryItem {
 // Map file type to SVG icon
 function getFileIcon(type: string): string {
   if (type.startsWith('image/')) {
-    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+    return `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
   } else if (type.startsWith('video/')) {
-    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
+    return `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`;
   } else if (type.startsWith('audio/')) {
-    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
+    return `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`;
   } else {
-    return `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+    return `<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
   }
 }
 
@@ -628,7 +632,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Close connection cleanly on tab close
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener('beforeunload', (e): string | void => {
+    if (currentConn && currentConn.open && transferredBytes > 0 && transferredBytes < totalBytesToTransfer) {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
     resetState();
   });
 
@@ -729,6 +738,10 @@ function setupHomeListeners() {
     if (chunkTuneEl) {
       chunkTuneEl.checked = isDynamicChunkTuningEnabled;
     }
+    const speedLimitEl = document.getElementById('settings-speed-limit') as HTMLSelectElement;
+    if (speedLimitEl) {
+      speedLimitEl.value = localStorage.getItem('fb_speed_limit') || '0';
+    }
   });
 
   // Settings Back Button click listener (Fix 2)
@@ -762,6 +775,10 @@ function setupHomeListeners() {
     }
     if (chunkTuneEl) {
       isDynamicChunkTuningEnabled = chunkTuneEl.checked;
+    }
+    const speedLimitEl = document.getElementById('settings-speed-limit') as HTMLSelectElement;
+    if (speedLimitEl) {
+      localStorage.setItem('fb_speed_limit', speedLimitEl.value);
     }
     showToast('Settings saved successfully.');
     showScreen('s-home');
@@ -1037,7 +1054,7 @@ function updateSelectedFilesUI() {
     totalSize += file.size;
 
     const fileRow = document.createElement('div');
-    fileRow.className = 'flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-border/80';
+    fileRow.className = 'flex items-center justify-between p-2.5 rounded-lg bg-surface border border-border/80';
 
     const fileInfo = document.createElement('div');
     fileInfo.className = 'flex items-center gap-2.5 min-w-0';
@@ -1070,9 +1087,11 @@ function updateSelectedFilesUI() {
     deleteBtn.className = 'text-text-secondary hover:text-red-400 p-1 transition cursor-pointer flex-shrink-0';
     deleteBtn.ariaLabel = `Remove ${file.name}`;
     deleteBtn.innerHTML = `<svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+    deleteBtn.dataset.fbIdx = String(index);
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      selectedFiles.splice(index, 1);
+      const idx = parseInt((e.currentTarget as HTMLElement).dataset.fbIdx || '0', 10);
+      selectedFiles.splice(idx, 1);
       updateSelectedFilesUI();
     });
 
@@ -1200,7 +1219,16 @@ async function initializeSenderRoom(retryCount: number = 0) {
             newCopyBtn.innerHTML = `<svg class="w-3.5 h-3.5 text-success animate-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Copied!</span>`;
             setTimeout(() => { newCopyBtn.innerHTML = originalHTML; }, 2000);
           } else {
-            showToast('Failed to copy. Copy manually or scan QR.');
+            const fallbackInput = document.getElementById('input-copy-fallback') as HTMLInputElement;
+            if (fallbackInput) {
+              fallbackInput.value = `Room: ${code} | ${receiverUrl}`;
+              fallbackInput.classList.remove('hidden');
+              fallbackInput.classList.add('visible');
+              fallbackInput.focus();
+              fallbackInput.select();
+            } else {
+              showToast('Failed to copy. Copy manually or scan QR.');
+            }
           }
         });
       });
@@ -1263,6 +1291,9 @@ function setupSenderConnection() {
   currentConn.on('open', () => {
     if (currentConn?.peerConnection) {
       monitorPeerConnection(currentConn.peerConnection);
+    }
+    if (window.location.search || window.location.hash) {
+      history.replaceState(null, '', window.location.pathname);
     }
     updateConnectionDiagnostics(); // Show candidate details
     startHeartbeat(true); // Start sending keep-alive pings (Fix 10)
@@ -1394,7 +1425,7 @@ function buildSendQueueUI() {
   selectedFiles.forEach((file, index) => {
     const row = document.createElement('div');
     row.id = `send-item-${index}`;
-    row.className = 'flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-border/80 text-xs text-text-secondary';
+    row.className = 'flex items-center justify-between p-2.5 rounded-lg bg-surface border border-border/80 text-xs text-text-secondary';
     
     const nameEl = document.createElement('span');
     nameEl.className = 'font-bold text-text-primary truncate max-w-[200px]';
@@ -1508,6 +1539,15 @@ async function sendSingleFile(file: File, fileIndex: number) {
 
     offset += rawLength;
     transferredBytes += rawLength;
+
+    const speedLimitMBps = parseInt(localStorage.getItem('fb_speed_limit') || '0', 10);
+    if (speedLimitMBps > 0 && smoothSpeed > 0) {
+      const limitBps = speedLimitMBps * 1024 * 1024;
+      if (smoothSpeed > limitBps) {
+        const delayMs = Math.min(50, Math.ceil((smoothSpeed / limitBps - 1) * 10));
+        if (delayMs > 0) await sleep(delayMs);
+      }
+    }
 
     // Update overall UI
     updateProgressUI(true);
@@ -1791,6 +1831,9 @@ function setupReceiverConnection() {
     if (currentConn?.peerConnection) {
       monitorPeerConnection(currentConn.peerConnection);
     }
+    if (window.location.search || window.location.hash) {
+      history.replaceState(null, '', window.location.pathname);
+    }
     updateConnectionDiagnostics(); // Show candidate details
     setProgressBarColor('accent', false); // Reset to accent
     startHeartbeat(false); // Start keep-alive receiver watchdog (Fix 10)
@@ -1986,7 +2029,7 @@ function buildReceiveQueueUI(metaList: FileMetadata[]) {
   metaList.forEach((file, index) => {
     const row = document.createElement('div');
     row.id = `recv-item-${index}`;
-    row.className = 'flex items-center justify-between p-2.5 rounded-lg bg-slate-900 border border-border/80 text-xs text-text-secondary';
+    row.className = 'flex items-center justify-between p-2.5 rounded-lg bg-surface border border-border/80 text-xs text-text-secondary';
 
     const infoWrapper = document.createElement('div');
     infoWrapper.className = 'flex items-center gap-2.5 min-w-0';
@@ -2056,6 +2099,16 @@ function enableDownloadBtn(index: number, blob: Blob, filename: string) {
   saveBtn.addEventListener('click', () => {
     triggerLocalDownload(blob, filename);
   });
+
+  if (blob.type.startsWith('image/')) {
+    const thumbUrl = URL.createObjectURL(blob);
+    const thumb = document.createElement('img');
+    thumb.src = thumbUrl;
+    thumb.alt = filename;
+    thumb.className = 'w-8 h-8 rounded object-cover border border-border/60 flex-shrink-0 ml-1';
+    thumb.onload = () => {};
+    actionWrapper.insertBefore(thumb, saveBtn);
+  }
 
   actionWrapper.appendChild(saveBtn);
 }
