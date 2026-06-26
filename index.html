@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="FileBeam">
   
   <!-- Security Headers (Implemented client-side where possible, CSP ready) -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:; camera-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' wss://*.peerjs.com https://*.peerjs.com wss://0.peerjs.com wss://peerjs.com; media-src 'self' blob: data:;">
 
   <!-- SEO Meta Tags -->
   <title>FileBeam - Secure Peer-to-Peer File Transfer</title>
@@ -33,7 +33,7 @@
   <link rel="icon" href="./assets/favicon-w9nYSJGx.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./assets/icon-192-amJ48zCo.png">
   <link rel="sitemap" type="application/xml" title="Sitemap" href="data:text/xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHVybHNldCB4bWxucz0iaHR0cDovL3d3dy5zaXRlbWFwcy5vcmcvc2NoZW1hcy9zaXRlbWFwLzAuOSI+CiAgPHVybD4KICAgIDxsb2M+aHR0cHM6Ly9keWxhbmdyb3cuZ2l0aHViLmlvL211dGxpLUZpbGUvPC9sb2M+CiAgICA8bGFzdG1vZD4yMDI2LTA2LTEwPC9sYXN0bW9kPgogICAgPGNoYW5nZWZyZXE+bW9udGhseTwvY2hhbmdlZnJlcT4KICAgIDxwcmlvcml0eT4xLjA8L3ByaW9yaXR5PgogIDwvdXJsPgo8L3VybHNldD4K">
-  <script type="module" crossorigin src="./assets/index-GJo1a-hJ.js"></script>
+  <script type="module" crossorigin src="./assets/index-3xt3b1X8.js"></script>
   <link rel="stylesheet" crossorigin href="./assets/index-B5ghsNyH.css">
 <link rel="manifest" href="./manifest.webmanifest"></head>
 <body class="min-h-screen flex flex-col items-center justify-between py-6 px-4 bg-bg text-text-primary antialiased" style="background-color: #08080f;">
@@ -530,9 +530,14 @@
         Run offline, instantly load, and access as a standalone app.
       </p>
     </div>
-    <button id="btn-pwa-install" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
-      Install
-    </button>
+    <div class="flex items-center gap-2">
+      <button id="btn-pwa-install" class="px-4 py-2.5 bg-accent hover:bg-accent-hover text-white text-xs font-bold rounded-xl active:scale-[0.96] transition cursor-pointer">
+        Install
+      </button>
+      <button id="btn-close-pwa-banner" class="text-text-secondary hover:text-white p-2 transition cursor-pointer" aria-label="Dismiss install banner">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
   </div>
 
   <!-- PWA Update Reload Toast -->
